@@ -33,6 +33,18 @@
           <span class="meta-divider">·</span>
           <span class="meta-value" id="metaTotalCount">-- 項</span>
         </div>
+
+        <div class="font-size-group" role="group" aria-label="字型大小調整">
+          <button type="button" class="btn btn-secondary btn-sm font-btn" id="fontDecBtn" title="縮小字型 (A-)">A-</button>
+          <span class="font-size-label" id="fontSizeLabel" title="目前字型大小">100%</span>
+          <button type="button" class="btn btn-secondary btn-sm font-btn" id="fontIncBtn" title="放大字型 (A+)">A+</button>
+        </div>
+
+        <button type="button" class="btn btn-secondary btn-sm" id="themeToggleBtn" title="切換明亮 / 暗色模式" aria-pressed="false">
+          <span id="themeIcon" aria-hidden="true">🌙</span>
+          <span id="themeText">暗色</span>
+        </button>
+
         <button type="button" class="btn btn-secondary btn-sm" id="exportCsvBtn" title="匯出目前篩選結果為 CSV">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           <span>匯出 CSV</span>
@@ -48,7 +60,7 @@
   <main class="container main-content">
     <section class="search-panel" aria-label="搜尋與篩選條件">
       <div class="search-box-wrap">
-        <label for="searchInput" class="sr-only">搜尋診療項目代碼、中文名稱、英文名稱或備註</label>
+        <label for="searchInput" class="sr-only">搜尋診療項目代碼、中文名稱、英文名稱、部章節或備註</label>
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
@@ -56,7 +68,7 @@
           type="search"
           id="searchInput"
           class="search-input"
-          placeholder="輸入代碼、中文/英文名稱或備註關鍵字（多關鍵字請用空格分隔，例如：超音波 腹部、00101B）"
+          placeholder="輸入代碼、中文/英文名稱、部章節或備註關鍵字（多關鍵字請用空格分隔，例如：超音波 腹部、2-2-7）"
           autocomplete="off"
           spellcheck="false"
         />
@@ -85,6 +97,26 @@
             <span>常用收藏</span>
             <span class="fav-count" id="favCountBadge">0</span>
           </button>
+
+          <label class="select-wrap">
+            <span class="sr-only">部章節篩選</span>
+            <select id="sectionFilter" class="select-input">
+              <option value="all">全部部章節</option>
+              <option value="基本診療">第二部第一章 基本診療</option>
+              <option value="檢查">2-2-1 檢查</option>
+              <option value="放射線診療">2-2-2 放射線診療</option>
+              <option value="注射">2-2-3 注射</option>
+              <option value="復健治療">2-2-4 復健治療</option>
+              <option value="精神醫療">2-2-5 精神醫療</option>
+              <option value="治療處置">2-2-6 治療處置</option>
+              <option value="手術">2-2-7 手術</option>
+              <option value="麻醉/輸血/石膏">2-2-8~10 輸血/石膏/麻醉</option>
+              <option value="牙醫">第三部 牙醫</option>
+              <option value="中醫">第四部 中醫</option>
+              <option value="品質支付">第八部 品質支付/專案</option>
+              <option value="預防保健">預防保健 / 篩檢</option>
+            </select>
+          </label>
 
           <label class="select-wrap">
             <span class="sr-only">生效狀態</span>
@@ -183,6 +215,11 @@
             <span class="metric-label">生效迄日</span>
             <span class="metric-value metric-date" id="detailEndDate">-</span>
           </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>部章節</h3>
+          <p id="detailSection" class="detail-section-badge"></p>
         </div>
 
         <div class="detail-section">

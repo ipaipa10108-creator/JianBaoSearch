@@ -3,6 +3,11 @@
 
   const PAGE_SIZE = 50;
   const FAV_STORAGE_KEY = "jianbaosearch_favorites_v1";
+  const THEME_STORAGE_KEY = "jianbaosearch_theme_v1";
+  const FONT_STORAGE_KEY = "jianbaosearch_font_size_v1";
+  const DEFAULT_FONT_SIZE = 15;
+  const MIN_FONT_SIZE = 13;
+  const MAX_FONT_SIZE = 22;
 
   const state = {
     allItems: [],
@@ -10,12 +15,15 @@
     meta: null,
     query: "",
     tier: "all",
+    section: "all",
     status: "active",
     sort: "relevance",
     favOnly: false,
     favorites: new Set(),
     page: 1,
     activeItem: null,
+    theme: "light",
+    fontSize: DEFAULT_FONT_SIZE,
   };
 
   // DOM elements
@@ -25,6 +33,7 @@
     tierFilters: document.getElementById("tierFilters"),
     favFilterBtn: document.getElementById("favFilterBtn"),
     favCountBadge: document.getElementById("favCountBadge"),
+    sectionFilter: document.getElementById("sectionFilter"),
     statusFilter: document.getElementById("statusFilter"),
     sortSelect: document.getElementById("sortSelect"),
     resultsSummary: document.getElementById("resultsSummary"),
@@ -38,6 +47,12 @@
     paginationBottom: document.getElementById("paginationBottom"),
     metaUpdatedDate: document.getElementById("metaUpdatedDate"),
     metaTotalCount: document.getElementById("metaTotalCount"),
+    fontDecBtn: document.getElementById("fontDecBtn"),
+    fontIncBtn: document.getElementById("fontIncBtn"),
+    fontSizeLabel: document.getElementById("fontSizeLabel"),
+    themeToggleBtn: document.getElementById("themeToggleBtn"),
+    themeIcon: document.getElementById("themeIcon"),
+    themeText: document.getElementById("themeText"),
     exportCsvBtn: document.getElementById("exportCsvBtn"),
     infoModalBtn: document.getElementById("infoModalBtn"),
     infoModal: document.getElementById("infoModal"),
@@ -54,6 +69,7 @@
     detailPoints: document.getElementById("detailPoints"),
     detailStartDate: document.getElementById("detailStartDate"),
     detailEndDate: document.getElementById("detailEndDate"),
+    detailSection: document.getElementById("detailSection"),
     detailTierDesc: document.getElementById("detailTierDesc"),
     detailNote: document.getElementById("detailNote"),
     detailFavBtn: document.getElementById("detailFavBtn"),
@@ -101,6 +117,203 @@
       default:
         return { label: "其他類別", desc: "屬牙科、中醫、論病例計酬或特定專章項目。" };
     }
+  }
+
+  const SURGERY_SUBSECTIONS = {
+    62: "手術-皮膚",
+    63: "手術-乳房",
+    64: "手術-筋骨",
+    65: "手術-呼吸器",
+    66: "手術-呼吸器",
+    67: "手術-胸腔",
+    68: "手術-心臟及血管",
+    69: "手術-心臟及血管",
+    70: "手術-造血與淋巴系統",
+    71: "手術-消化器",
+    72: "手術-消化器",
+    73: "手術-消化器",
+    74: "手術-消化器",
+    75: "手術-消化器",
+    76: "手術-泌尿系統",
+    77: "手術-泌尿系統",
+    78: "手術-泌尿系統",
+    79: "手術-男性生殖系統",
+    80: "手術-女性生殖系統",
+    81: "手術-女性生殖系統",
+    82: "手術-內分泌系統",
+    83: "手術-神經外科",
+    84: "手術-聽器",
+    85: "手術-視器",
+    86: "手術-視器",
+    87: "手術-視器",
+    88: "手術-小兒外科/器官移植",
+  };
+
+  function getSectionInfo(code) {
+    if (!code) return { group: "其他", label: "其他項目", short: "" };
+    const upper = code.toUpperCase();
+
+    // 預防保健 / 國健署篩檢短代碼 (如 20, 21, 31, 3A, 5A, 81, 91, 95, I1001C, L1001C)
+    if (upper.length <= 3 && !/^[ABCDE]\d{2}/.test(upper)) {
+      return { group: "預防保健", label: "預防保健及篩檢補助項目", short: "預防保健" };
+    }
+    if (/^[IL]\d{4}/.test(upper)) {
+      return { group: "預防保健", label: "預防保健及篩檢補助項目", short: "預防保健" };
+    }
+
+    // 中醫 (A01~, B71~, C01~, D01~, E01~)
+    if (/^[ABCDE]\d{2,3}/.test(upper)) {
+      const ch = upper[0];
+      const map = {
+        A: "第四部第一章 中醫門診診察費",
+        B: "第四部第三章 檢驗檢查費",
+        C: "第四部第二章 藥費/特定疾病",
+        D: "第四部第四章 針灸治療處置費",
+        E: "第四部第五章 傷科治療處置費",
+      };
+      return { group: "中醫", label: map[ch] || "第四部 中醫", short: "第四部 中醫" };
+    }
+
+    // 品質支付 / 專案計畫 (Pxxxx, Qxxxx, Txxxx)
+    if (/^[PQT]/.test(upper)) {
+      return { group: "品質支付", label: "第八部 品質支付服務 / 試辦計畫", short: "品質支付" };
+    }
+
+    // 住院膳食費 (Fxxxx, Gxxxx) & 門診藥費 (MA1~)
+    if (/^[FG]\d{4}/.test(upper)) {
+      return { group: "基本診療", label: "第二部第一章第四節 膳食費", short: "2-1-4 膳食費" };
+    }
+    if (/^MA/.test(upper)) {
+      return { group: "基本診療", label: "第二部第一章第五節 藥事服務費", short: "2-1-5 藥事服務" };
+    }
+
+    // 達文西 / 機器人輔助手術 (N20xxx)
+    if (/^N\d+/.test(upper)) {
+      return { group: "手術", label: "第二部第二章第七節 手術-機器人輔助微創手術", short: "2-2-7" };
+    }
+
+    // 復健專用代碼 OT1 / ST1
+    if (/^(OT|ST)\d+/.test(upper)) {
+      return { group: "復健治療", label: "第二部第二章第四節 復健治療", short: "2-2-4" };
+    }
+
+    const prefix2 = parseInt(upper.slice(0, 2), 10);
+    if (!Number.isFinite(prefix2)) {
+      return { group: "其他", label: "其他診療項目", short: "" };
+    }
+
+    if (prefix2 === 0 || prefix2 === 1) {
+      return { group: "基本診療", label: "第二部第一章第一節 門診/急診診察費", short: "2-1-1" };
+    }
+    if (prefix2 === 2) {
+      return { group: "基本診療", label: "第二部第一章第二節 住院及急診觀察床診察費", short: "2-1-2" };
+    }
+    if (prefix2 === 3 || prefix2 === 4) {
+      return { group: "基本診療", label: "第二部第一章第三節 病房費", short: "2-1-3" };
+    }
+    if (prefix2 === 5) {
+      if (upper.startsWith("053") || upper.startsWith("054")) {
+        return { group: "基本診療", label: "第五部 居家照護及安寧療護", short: "第五部" };
+      }
+      return { group: "基本診療", label: "第二部第一章第四節 管灌飲食費 / 第五節 藥事服務費", short: "2-1-4/5" };
+    }
+    if (prefix2 >= 6 && prefix2 <= 30) {
+      return { group: "檢查", label: "第二部第二章第一節 檢查", short: "2-2-1" };
+    }
+    if (prefix2 >= 32 && prefix2 <= 37) {
+      return { group: "放射線診療", label: "第二部第二章第二節 放射線診療", short: "2-2-2" };
+    }
+    if (prefix2 === 39) {
+      return { group: "注射", label: "第二部第二章第三節 注射", short: "2-2-3" };
+    }
+    if (prefix2 >= 42 && prefix2 <= 44) {
+      return { group: "復健治療", label: "第二部第二章第四節 復健治療", short: "2-2-4" };
+    }
+    if (prefix2 === 45) {
+      return { group: "精神醫療", label: "第二部第二章第五節 精神醫療治療費", short: "2-2-5" };
+    }
+    if (prefix2 >= 47 && prefix2 <= 61) {
+      return { group: "治療處置", label: "第二部第二章第六節 治療處置", short: "2-2-6" };
+    }
+    if (prefix2 >= 62 && prefix2 <= 88) {
+      const sub = SURGERY_SUBSECTIONS[prefix2] || "手術";
+      return { group: "手術", label: `第二部第二章第七節 ${sub}`, short: "2-2-7" };
+    }
+    if (prefix2 >= 89 && prefix2 <= 92) {
+      const dentalMap = {
+        89: "第三部第三章第一節 牙體復形",
+        90: "第三部第三章第二節 根管治療",
+        91: "第三部第三章第三節 牙周病學",
+        92: "第三部第三章第四節 口腔顎面外科",
+      };
+      return { group: "牙醫", label: dentalMap[prefix2] || "第三部 牙醫", short: "第三部 牙醫" };
+    }
+    if (prefix2 === 93 || prefix2 === 94) {
+      return { group: "麻醉/輸血/石膏", label: "第二部第二章第八節 輸血及骨髓移植", short: "2-2-8" };
+    }
+    if (prefix2 === 95) {
+      return { group: "麻醉/輸血/石膏", label: "第二部第二章第九節 石膏繃帶", short: "2-2-9" };
+    }
+    if (prefix2 === 96) {
+      if (upper === "96001C" || upper === "96000C") {
+        return { group: "牙醫", label: "第三部第四章 牙科麻醉費", short: "牙科麻醉" };
+      }
+      return { group: "麻醉/輸血/石膏", label: "第二部第二章第十節 麻醉費", short: "2-2-10" };
+    }
+    if (prefix2 >= 97 && prefix2 <= 99) {
+      return { group: "其他", label: "第六部 論病例計酬", short: "第六部" };
+    }
+
+    return { group: "其他", label: "其他診療項目", short: "" };
+  }
+
+  function applyTheme(theme) {
+    state.theme = theme === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", state.theme);
+    if (state.theme === "dark") {
+      el.themeIcon.textContent = "☀️";
+      el.themeText.textContent = "明亮";
+      el.themeToggleBtn.setAttribute("aria-pressed", "true");
+    } else {
+      el.themeIcon.textContent = "🌙";
+      el.themeText.textContent = "暗色";
+      el.themeToggleBtn.setAttribute("aria-pressed", "false");
+    }
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+    } catch {}
+  }
+
+  function applyFontSize(size) {
+    const clamped = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Number(size) || DEFAULT_FONT_SIZE));
+    state.fontSize = clamped;
+    document.documentElement.style.setProperty("--base-font-size", `${clamped}px`);
+    const pct = Math.round((clamped / DEFAULT_FONT_SIZE) * 100);
+    el.fontSizeLabel.textContent = `${pct}%`;
+    el.fontDecBtn.disabled = clamped <= MIN_FONT_SIZE;
+    el.fontIncBtn.disabled = clamped >= MAX_FONT_SIZE;
+    try {
+      localStorage.setItem(FONT_STORAGE_KEY, String(clamped));
+    } catch {}
+  }
+
+  function loadPreferences() {
+    let savedTheme = null;
+    let savedFont = null;
+    try {
+      savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+      savedFont = localStorage.getItem(FONT_STORAGE_KEY);
+    } catch {}
+
+    if (savedTheme === "dark" || savedTheme === "light") {
+      applyTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      applyTheme("dark");
+    } else {
+      applyTheme("light");
+    }
+
+    applyFontSize(savedFont ? Number(savedFont) : DEFAULT_FONT_SIZE);
   }
 
   function formatDate(yyyymmdd) {
@@ -241,6 +454,7 @@
   function applyFilters() {
     const terms = parseQueryTerms(state.query);
     const tier = state.tier;
+    const section = state.section;
     const status = state.status;
     const favOnly = state.favOnly;
 
@@ -251,6 +465,7 @@
 
       if (favOnly && !state.favorites.has(item.c)) continue;
       if (tier !== "all" && getItemTier(item.c) !== tier) continue;
+      if (section !== "all" && item._section.group !== section) continue;
 
       if (status === "active" && !isItemActive(item)) continue;
       if (status === "inactive" && isItemActive(item)) continue;
@@ -329,6 +544,7 @@
         const active = isItemActive(item);
         const zhHtml = highlightText(item.zh, terms);
         const enHtml = item.en ? `<div class="name-en">${highlightText(item.en, terms)}</div>` : "";
+        const secHtml = `<div class="section-tag">${highlightText(item._section.label, terms)}</div>`;
         const codeHtml = highlightText(item.c, terms);
         const hasNote = Boolean(item.n && item.n.trim());
 
@@ -348,6 +564,7 @@
             <td class="col-name">
               <div class="name-zh">${zhHtml}</div>
               ${enHtml}
+              ${secHtml}
             </td>
             <td class="col-points">
               <span class="points-val">${formatPoints(item.p)}</span><span class="points-unit">點</span>
@@ -375,6 +592,7 @@
         const active = isItemActive(item);
         const zhHtml = highlightText(item.zh, terms);
         const enHtml = item.en ? `<div class="card-en">${highlightText(item.en, terms)}</div>` : "";
+        const secHtml = `<div class="card-section-row"><span class="section-tag">${highlightText(item._section.label, terms)}</span></div>`;
         const codeHtml = highlightText(item.c, terms);
 
         return `
@@ -392,6 +610,7 @@
             </div>
             <div class="card-zh">${zhHtml}</div>
             ${enHtml}
+            ${secHtml}
             <div class="card-bottom">
               <span><span class="status-dot ${active ? "active" : "inactive"}"></span>${formatDate(item.s)} ~ ${formatDate(item.e)}</span>
               ${item.n ? `<span class="note-pill">有備註</span>` : ""}
@@ -450,6 +669,7 @@
     el.detailPoints.textContent = `${formatPoints(item.p)} 點`;
     el.detailStartDate.textContent = formatDate(item.s);
     el.detailEndDate.textContent = formatDate(item.e);
+    el.detailSection.textContent = item._section.label;
     el.detailTierDesc.textContent = tierInfo.desc;
     el.detailNote.textContent = formatNoteText(item.n);
 
@@ -477,12 +697,12 @@
       showToast("目前沒有可匯出的資料");
       return;
     }
-    const headers = ["診療項目代碼", "健保支付點數", "生效起日", "生效迄日", "英文項目名稱", "中文項目名稱", "備註"];
+    const headers = ["診療項目代碼", "部章節", "健保支付點數", "生效起日", "生效迄日", "英文項目名稱", "中文項目名稱", "備註"];
     const escapeCsv = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
     const lines = [
       headers.map(escapeCsv).join(","),
       ...state.filteredItems.map((item) =>
-        [item.c, item.p, item.s, item.e, item.en, item.zh, item.n].map(escapeCsv).join(",")
+        [item.c, item._section.label, item.p, item.s, item.e, item.en, item.zh, item.n].map(escapeCsv).join(",")
       ),
     ];
     const bom = "\uFEFF";
@@ -534,6 +754,11 @@
       applyFilters();
     });
 
+    el.sectionFilter.addEventListener("change", () => {
+      state.section = el.sectionFilter.value;
+      applyFilters();
+    });
+
     el.statusFilter.addEventListener("change", () => {
       state.status = el.statusFilter.value;
       applyFilters();
@@ -549,9 +774,11 @@
       el.clearSearchBtn.classList.add("hidden");
       state.query = "";
       state.tier = "all";
+      state.section = "all";
       state.status = "active";
       state.favOnly = false;
       state.sort = "relevance";
+      el.sectionFilter.value = "all";
       el.statusFilter.value = "active";
       el.sortSelect.value = "relevance";
       el.favFilterBtn.classList.remove("active");
@@ -560,6 +787,19 @@
         c.classList.toggle("active", c.dataset.tier === "all");
       });
       applyFilters();
+    });
+
+    // Theme & Font Size controls
+    el.themeToggleBtn.addEventListener("click", () => {
+      applyTheme(state.theme === "dark" ? "light" : "dark");
+    });
+
+    el.fontDecBtn.addEventListener("click", () => {
+      applyFontSize(state.fontSize - 1);
+    });
+
+    el.fontIncBtn.addEventListener("click", () => {
+      applyFontSize(state.fontSize + 1);
     });
 
     // Delegate table & card clicks
@@ -612,6 +852,7 @@
       const it = state.activeItem;
       const text = [
         `診療項目代碼：${it.c}`,
+        `部章節：${it._section.label}`,
         `中文項目名稱：${it.zh}`,
         it.en ? `英文項目名稱：${it.en}` : null,
         `健保支付點數：${formatPoints(it.p)} 點`,
@@ -649,6 +890,7 @@
   }
 
   async function init() {
+    loadPreferences();
     loadFavorites();
     bindEvents();
 
@@ -671,10 +913,11 @@
       }
 
       const items = await dataRes.json();
-      // Precompute lowercase search string for instant filtering
+      // Precompute section & lowercase search string for instant filtering
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        it._search = `${it.c}\t${it.zh}\t${it.en}\t${it.n}`.toLowerCase();
+        it._section = getSectionInfo(it.c);
+        it._search = `${it.c}\t${it.zh}\t${it.en}\t${it.n}\t${it._section.label}\t${it._section.short}`.toLowerCase();
       }
       state.allItems = items;
       applyFilters();

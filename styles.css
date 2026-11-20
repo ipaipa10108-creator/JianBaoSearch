@@ -33,22 +33,57 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+[data-theme="dark"] {
+  --bg-page: #0b1120;
+  --bg-surface: #111827;
+  --bg-subtle: #1e293b;
+  --bg-hover: #263348;
+  --border-color: #293548;
+  --border-strong: #475569;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent: #14b8a6;
+  --accent-hover: #2dd4bf;
+  --accent-soft: rgba(20, 184, 166, 0.14);
+  --accent-border: rgba(45, 212, 191, 0.35);
+
+  --amber: #f59e0b;
+  --amber-soft: rgba(245, 158, 11, 0.15);
+  --blue: #38bdf8;
+  --blue-soft: rgba(56, 189, 248, 0.14);
+  --rose: #fb7185;
+  --rose-soft: rgba(251, 113, 133, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
 
-html,
+html {
+  margin: 0;
+  padding: 0;
+  font-size: var(--base-font-size, 15px);
+}
+
 body {
   margin: 0;
   padding: 0;
   background-color: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 1rem;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .sr-only {
@@ -1027,6 +1062,81 @@ mark {
   font-weight: 500;
   box-shadow: var(--shadow-md);
   z-index: 100;
+}
+
+/* Font Size Controls */
+.font-size-group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.font-size-group .font-btn {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 9px;
+  font-weight: 600;
+}
+
+.font-size-group .font-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.font-size-label {
+  padding: 0 7px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+}
+
+/* Section Tag (部章節) */
+.section-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.card-section-row {
+  margin-bottom: 8px;
+}
+
+.detail-section-badge {
+  display: inline-block;
+  margin: 0;
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+[data-theme="dark"] mark {
+  background: #854d0e;
+  color: #fef9c3;
+}
+
+[data-theme="dark"] .info-note {
+  color: #fcd34d;
 }
 
 /* Responsive */
