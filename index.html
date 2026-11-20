@@ -57,7 +57,25 @@
     </div>
   </header>
 
+  <nav class="mode-nav" aria-label="查詢系統切換">
+    <div class="container mode-nav-inner" role="tablist">
+      <button type="button" class="mode-tab active" role="tab" aria-selected="true" data-mode="nhi">
+        <span class="tab-badge">NHI</span>
+        <span>健保支付標準查詢</span>
+      </button>
+      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="icd-cm">
+        <span class="tab-badge">DX</span>
+        <span>ICD-9 / 10 / 11 診斷對照</span>
+      </button>
+      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="icd-pcs">
+        <span class="tab-badge">PCS</span>
+        <span>ICD-10-PCS 處置編碼</span>
+      </button>
+    </div>
+  </nav>
+
   <main class="container main-content">
+    <div id="nhiView" class="view-panel">
     <section class="search-panel" aria-label="搜尋與篩選條件">
       <div class="search-box-wrap">
         <label for="searchInput" class="sr-only">搜尋診療項目代碼、中文名稱、英文名稱、部章節或備註</label>
@@ -183,6 +201,120 @@
 
       <div class="pagination-bar" id="paginationBottom"></div>
     </section>
+    </div> <!-- /#nhiView -->
+
+    <!-- ICD-9 / ICD-10 / ICD-11 Crosswalk View -->
+    <div id="icdCmView" class="view-panel hidden">
+      <section class="search-panel" aria-label="ICD-9 / ICD-10 / ICD-11 診斷編碼搜尋">
+        <div class="search-box-wrap">
+          <label for="icdCmInput" class="sr-only">輸入 ICD-9、ICD-10-CM、ICD-11 代碼或中英文疾病名稱</label>
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="search"
+            id="icdCmInput"
+            class="search-input"
+            placeholder="輸入 ICD-9（如 250.00）、ICD-10（如 E11.9）、ICD-11（如 5A11）或中英文病名（如：糖尿病、高血壓）"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" id="icdCmClearBtn" class="clear-btn hidden" aria-label="清除搜尋">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="filters-row">
+          <div class="filter-group" role="group" aria-label="ICD 版本快速範例">
+            <span class="filter-label">常用範例：</span>
+            <div class="chip-list" id="icdCmExamples">
+              <button type="button" class="chip" data-example="E11">E11 糖尿病</button>
+              <button type="button" class="chip" data-example="I10">I10 高血壓</button>
+              <button type="button" class="chip" data-example="5A11">5A11 (ICD-11)</button>
+              <button type="button" class="chip" data-example="401.9">401.9 (ICD-9)</button>
+            </div>
+          </div>
+          <div class="filter-controls">
+            <label class="select-wrap">
+              <span class="sr-only">ICD-11 對應篩選</span>
+              <select id="icdCmOnly11" class="select-input">
+                <option value="all">全部對應項目</option>
+                <option value="has11">僅顯示含 ICD-11 對應</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="results-section" aria-label="ICD 診斷對照結果">
+        <div class="results-toolbar">
+          <p class="results-summary" id="icdCmSummary">點擊上方分頁後載入對照資料...</p>
+          <div class="pagination-inline" id="icdCmPageTop"></div>
+        </div>
+        <div id="icdCmLoading" class="state-card hidden">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>正在載入 ICD-9 / ICD-10-CM / ICD-11 對照資料庫（約 80,000 筆）...</p>
+        </div>
+        <div id="icdCmResults" class="icd-grid"></div>
+        <div class="pagination-bar" id="icdCmPageBottom"></div>
+      </section>
+    </div>
+
+    <!-- ICD-10-PCS Procedure View -->
+    <div id="icdPcsView" class="view-panel hidden">
+      <section class="search-panel" aria-label="ICD-10-PCS 處置編碼搜尋">
+        <div class="search-box-wrap">
+          <label for="icdPcsInput" class="sr-only">輸入 ICD-10-PCS 處置碼、ICD-9 處置碼、中英文處置名稱或健保醫令碼</label>
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="search"
+            id="icdPcsInput"
+            class="search-input"
+            placeholder="輸入 ICD-10-PCS（如 0FT40ZZ）、ICD-9 處置碼（如 51.23）、中英文處置名稱（如：膽囊切除、引流術）或健保醫令碼"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" id="icdPcsClearBtn" class="clear-btn hidden" aria-label="清除搜尋">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="filters-row">
+          <div class="filter-group" role="group" aria-label="處置編碼範例">
+            <span class="filter-label">常用範例：</span>
+            <div class="chip-list" id="icdPcsExamples">
+              <button type="button" class="chip" data-example="膽囊切除">膽囊切除</button>
+              <button type="button" class="chip" data-example="009530Z">009530Z 腦室/蜘蛛網膜下腔引流</button>
+              <button type="button" class="chip" data-example="01.01">01.01 (ICD-9 處置)</button>
+            </div>
+          </div>
+          <div class="filter-controls">
+            <label class="select-wrap">
+              <span class="sr-only">健保醫令對應篩選</span>
+              <select id="icdPcsOnlyNhi" class="select-input">
+                <option value="all">全部處置編碼</option>
+                <option value="hasNhi">僅顯示有對應健保醫令</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="results-section" aria-label="ICD-10-PCS 處置編碼結果">
+        <div class="results-toolbar">
+          <p class="results-summary" id="icdPcsSummary">點擊上方分頁後載入處置資料...</p>
+          <div class="pagination-inline" id="icdPcsPageTop"></div>
+        </div>
+        <div id="icdPcsLoading" class="state-card hidden">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>正在載入 ICD-10-PCS 處置與健保醫令對應資料庫（約 93,000 筆）...</p>
+        </div>
+        <div id="icdPcsResults" class="icd-grid"></div>
+        <div class="pagination-bar" id="icdPcsPageBottom"></div>
+      </section>
+    </div>
   </main>
 
   <!-- Item Detail Drawer / Modal -->

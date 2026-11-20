@@ -1,27 +1,37 @@
-# 健保支付標準查詢系統 (JianBaoSearch)
+# 健保支付標準與 ICD 編碼查詢系統 (JianBaoSearch)
 
-即時查詢衛生福利部中央健康保險署「全民健康保險醫療服務給付項目及支付標準」，支援**自動每日同步最新健保署開放資料**，並可免費部署至 **GitHub Pages**、**Cloudflare Pages** 或 **Vercel**。
+整合衛生福利部中央健康保險署「全民健康保險醫療服務給付項目及支付標準」、**ICD-9 / ICD-10-CM / ICD-11 診斷對照**與 **ICD-10-PCS 處置編碼查詢**，支援**每日自動同步最新健保署開放資料**，並可 100% 免費部署至 **Cloudflare Pages**、**Vercel** 或 **GitHub Pages**。
 
 ## 主要功能
 
-- **多關鍵字即時搜尋**：支援同時搜尋診療項目代碼、中文項目名稱、英文項目名稱及備註（多關鍵字以空格分隔，例如：`超音波 腹部`）。
-- **表別與層級篩選**：快速切換 `C 含基層診所`、`B 醫院`、`A 醫學中心/區域`、`P 專案計畫` 及其他類別。
-- **生效狀態與排序**：自動比對今日日期區分「現行有效」與「非現行」項目，支援依相關度、代碼、點數高低或最新生效日排序。
-- **詳細規範檢視**：點擊任一項目開啟側邊抽屜，完整呈現健保支付點數、生效起迄日、表別說明與自動分行的備註規範，並支援一鍵複製代碼或完整資訊。
-- **常用收藏與 CSV 匯出**：支援將常用代碼加入「★ 常用收藏」（儲存於瀏覽器本機），並可隨時將篩選結果匯出為 UTF-8 CSV 檔案。
+### 1. 健保支付標準查詢（NHI）
+- **多關鍵字即時搜尋**：支援同時搜尋診療項目代碼、中文項目名稱、英文項目名稱、部章節與備註（多關鍵字以空格分隔，例如：`超音波 腹部`、`2-2-7`）。
+- **部章節與表別篩選**：自動對應完整**部章節**名稱（如 `第二部第二章第六節 治療處置`、`第二部第二章第七節 手術-胸腔`），於外部卡片、桌面表格及詳細視窗皆有標注；支援依表別（`C`、`B`、`A`、`P`、其他）、部章節與現行有效狀態篩選。
+- **詳細規範與常用收藏**：點擊項目可開啟詳細抽屜檢視自動分行的備註規範，支援一鍵複製代碼／完整資訊、常用收藏（儲存於瀏覽器本機）與匯出 CSV。
 
-## 自動更新機制
+### 2. ICD-9 / ICD-10-CM / ICD-11 診斷編碼對照（DX）
+- **三版本同步對照**：輸入任一版本的代碼（如 `250.00`、`E11.9`、`5A11`）或中英文疾病名稱（如 `糖尿病`、`高血壓`），即同時列出對應的 **ICD-9-CM**、**ICD-10-CM**（含健保署中英文名稱）與 **WHO ICD-11** 編碼。
+- 支援一鍵複製任一版本代碼與匯出查詢結果為 CSV。
 
-- **資料來源**：[政府資料開放平臺－醫療服務給付項目及支付標準 (174450)](https://data.gov.tw/dataset/174450)
-- **更新腳本**：[`scripts/update_data.py`](scripts/update_data.py)
-- **排程工作流程**：[`.github/workflows/update-nhi-data.yml`](.github/workflows/update-nhi-data.yml)
-  - 每日台灣時間 `09:00`（UTC `01:00`）自動執行檢查，若有異動便自動更新 `data/fee-schedule.json` 與 `data/meta.json` 並提交至 GitHub。
-  - 亦可隨時於 GitHub Repository 的 **Actions → Auto Update NHI Fee Schedule → Run workflow** 手動觸發更新。
+### 3. ICD-10-PCS 處置編碼查詢（PCS）
+- **處置碼與健保醫令串聯**：支援搜尋 **ICD-10-PCS** 處置代碼、中英文處置名稱、對應 **ICD-9-CM 處置碼**及**健保醫令碼**。
+- 點擊結果卡片上的「對應健保醫令」按鈕，可直接跳轉至「健保支付標準查詢」檢視該醫令的支付點數與申報規範。
+
+### 4. 閱讀體驗與個人化設定
+- **明亮 / 暗色模式切換**：支援一鍵切換明亮與暗色主題，並自動記憶於瀏覽器。
+- **A+ / A- 字型大小調整**：支援 `13px`～`22px` 等比例縮放全站字型，適合手機、平板與電子紙閱讀器使用。
+
+## 資料來源與自動更新機制
+
+- **健保支付標準**：[政府資料開放平臺－醫療服務給付項目及支付標準 (174450)](https://data.gov.tw/dataset/174450)
+  - 更新腳本：[`scripts/update_data.py`](scripts/update_data.py)
+  - 排程工作流程：[`.github/workflows/update-nhi-data.yml`](.github/workflows/update-nhi-data.yml)（每日台灣時間 `09:00` 自動檢查更新並推送至 `main`）
+- **ICD 對照資料**：健保署 2001 年版 ICD-9-CM 與 ICD-10-CM/PCS 對應檔、ICD-10-PCS 與健保醫令對應檔（透過 [`scripts/build_icd_data.py`](scripts/build_icd_data.py) 建置），以及 WHO 官方 ICD-10 與 ICD-11 對照表。
 
 ## 免費部署方式
 
 本專案為純靜態網頁（無須建置指令），以下平台皆提供免費方案：
 
-- **Cloudflare Pages**：連結此 GitHub Repo，Build command 留空，Build output directory 設為 `/`（根目錄）。每次 GitHub Actions 自動更新資料後會自動重新部署。
+- **Cloudflare Pages**：連結此 GitHub Repo，Build command 留空，Build output directory 設為 `/`（根目錄）。
 - **Vercel**：匯入此 GitHub Repo，Framework Preset 選 `Other`，不需設定 Build Command，直接部署即可。
-- **GitHub Pages**：於 Repo 的 **Settings → Pages** 選擇 `Deploy from a branch`（`main` / `/ (root)`）。
+- **GitHub Pages**：至 Repo 的 **Settings → Pages**，選擇 `Deploy from a branch`（`main` / `/ (root)`）。

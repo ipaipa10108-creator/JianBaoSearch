@@ -10,6 +10,7 @@
   const MAX_FONT_SIZE = 22;
 
   const state = {
+    mode: "nhi",
     allItems: [],
     filteredItems: [],
     meta: null,
@@ -24,10 +25,53 @@
     activeItem: null,
     theme: "light",
     fontSize: DEFAULT_FONT_SIZE,
+    icdCm: {
+      loaded: false,
+      loading: false,
+      i9: {},
+      i11: {},
+      rows: [],
+      filtered: [],
+      query: "",
+      only11: "all",
+      page: 1,
+    },
+    icdPcs: {
+      loaded: false,
+      loading: false,
+      i9: {},
+      rows: [],
+      filtered: [],
+      query: "",
+      onlyNhi: "all",
+      page: 1,
+    },
   };
 
   // DOM elements
   const el = {
+    modeTabs: document.querySelectorAll(".mode-tab"),
+    nhiView: document.getElementById("nhiView"),
+    icdCmView: document.getElementById("icdCmView"),
+    icdPcsView: document.getElementById("icdPcsView"),
+    icdCmInput: document.getElementById("icdCmInput"),
+    icdCmClearBtn: document.getElementById("icdCmClearBtn"),
+    icdCmExamples: document.getElementById("icdCmExamples"),
+    icdCmOnly11: document.getElementById("icdCmOnly11"),
+    icdCmSummary: document.getElementById("icdCmSummary"),
+    icdCmLoading: document.getElementById("icdCmLoading"),
+    icdCmResults: document.getElementById("icdCmResults"),
+    icdCmPageTop: document.getElementById("icdCmPageTop"),
+    icdCmPageBottom: document.getElementById("icdCmPageBottom"),
+    icdPcsInput: document.getElementById("icdPcsInput"),
+    icdPcsClearBtn: document.getElementById("icdPcsClearBtn"),
+    icdPcsExamples: document.getElementById("icdPcsExamples"),
+    icdPcsOnlyNhi: document.getElementById("icdPcsOnlyNhi"),
+    icdPcsSummary: document.getElementById("icdPcsSummary"),
+    icdPcsLoading: document.getElementById("icdPcsLoading"),
+    icdPcsResults: document.getElementById("icdPcsResults"),
+    icdPcsPageTop: document.getElementById("icdPcsPageTop"),
+    icdPcsPageBottom: document.getElementById("icdPcsPageBottom"),
     searchInput: document.getElementById("searchInput"),
     clearSearchBtn: document.getElementById("clearSearchBtn"),
     tierFilters: document.getElementById("tierFilters"),
@@ -692,30 +736,67 @@
     state.activeItem = null;
   }
 
-  function exportFilteredCsv() {
-    if (!state.filteredItems.length) {
-      showToast("目前沒有可匯出的資料");
-      return;
-    }
-    const headers = ["診療項目代碼", "部章節", "健保支付點數", "生效起日", "生效迄日", "英文項目名稱", "中文項目名稱", "備註"];
+  function downloadCsv(filename, headers, rows) {
     const escapeCsv = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
     const lines = [
       headers.map(escapeCsv).join(","),
-      ...state.filteredItems.map((item) =>
-        [item.c, item._section.label, item.p, item.s, item.e, item.en, item.zh, item.n].map(escapeCsv).join(",")
-      ),
+      ...rows.map((r) => r.map(escapeCsv).join(",")),
     ];
     const bom = "\uFEFF";
     const blob = new Blob([bom + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `健保支付標準查詢_${TODAY_STR}.csv`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast(`已匯出 ${state.filteredItems.length} 筆 CSV`);
+    showToast(`已匯出 ${rows.length} 筆 CSV`);
+  }
+
+  function exportFilteredCsv() {
+    if (state.mode === "icd-cm") {
+      const list = state.icdCm.filtered.slice(0, 5000);
+      if (!list.length) return showToast("目前沒有可匯出的 ICD 診斷資料");
+      const { i9, i11 } = state.icdCm;
+      downloadCsv(
+        `ICD診斷對照_${TODAY_STR}.csv`,
+        ["ICD-9-CM", "ICD-9中文", "ICD-9英文", "ICD-10-CM", "ICD-10中文", "ICD-10英文", "ICD-11代碼", "ICD-11英文"],
+        list.map((r) => {
+          const d9 = i9[r[0]] || ["", ""];
+          const c11s = r[4] || [];
+          const t11s = c11s.map((c) => i11[c] || "").filter(Boolean);
+          return [r[0], d9[0], d9[1], r[1], r[2], r[3], c11s.join("; "), t11s.join("; ")];
+        })
+      );
+      return;
+    }
+
+    if (state.mode === "icd-pcs") {
+      const list = state.icdPcs.filtered.slice(0, 5000);
+      if (!list.length) return showToast("目前沒有可匯出的 ICD-10-PCS 資料");
+      const { i9 } = state.icdPcs;
+      downloadCsv(
+        `ICD10PCS處置對照_${TODAY_STR}.csv`,
+        ["ICD-10-PCS", "PCS中文", "PCS英文", "ICD-9處置碼", "ICD-9中文", "ICD-9英文", "對應健保醫令碼"],
+        list.map((r) => {
+          const d9 = i9[r[0]] || ["", ""];
+          return [r[1], r[2], r[3], r[0], d9[0], d9[1], (r[4] || []).join("; ")];
+        })
+      );
+      return;
+    }
+
+    if (!state.filteredItems.length) {
+      showToast("目前沒有可匯出的資料");
+      return;
+    }
+    downloadCsv(
+      `健保支付標準查詢_${TODAY_STR}.csv`,
+      ["診療項目代碼", "部章節", "健保支付點數", "生效起日", "生效迄日", "英文項目名稱", "中文項目名稱", "備註"],
+      state.filteredItems.map((item) => [item.c, item._section.label, item.p, item.s, item.e, item.en, item.zh, item.n])
+    );
   }
 
   function bindEvents() {
@@ -886,6 +967,450 @@
         e.preventDefault();
         el.searchInput.focus();
       }
+    });
+
+    bindIcdEvents();
+  }
+
+  function renderSimplePagination(topEl, bottomEl, page, totalPages) {
+    if (totalPages <= 1) {
+      topEl.innerHTML = "";
+      bottomEl.innerHTML = "";
+      return;
+    }
+    const pages = [1];
+    if (page > 3) pages.push("...");
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
+      pages.push(i);
+    }
+    if (page < totalPages - 2) pages.push("...");
+    if (totalPages > 1) pages.push(totalPages);
+
+    const html = [
+      `<button type="button" class="page-btn" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>上一頁</button>`,
+      ...pages.map((num) =>
+        num === "..."
+          ? `<span style="padding:0 4px;color:var(--text-muted)">…</span>`
+          : `<button type="button" class="page-btn ${num === page ? "active" : ""}" data-page="${num}">${num}</button>`
+      ),
+      `<button type="button" class="page-btn" data-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>下一頁</button>`,
+    ].join("");
+
+    topEl.innerHTML = `<span style="font-size:0.82rem;color:var(--text-muted)">第 ${page} / ${totalPages} 頁</span>`;
+    bottomEl.innerHTML = html;
+  }
+
+  function switchMode(mode) {
+    state.mode = mode;
+    el.modeTabs.forEach((btn) => {
+      const active = btn.dataset.mode === mode;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", String(active));
+    });
+    el.nhiView.classList.toggle("hidden", mode !== "nhi");
+    el.icdCmView.classList.toggle("hidden", mode !== "icd-cm");
+    el.icdPcsView.classList.toggle("hidden", mode !== "icd-pcs");
+
+    if (mode === "icd-cm" && !state.icdCm.loaded && !state.icdCm.loading) {
+      loadIcdCm();
+    } else if (mode === "icd-pcs" && !state.icdPcs.loaded && !state.icdPcs.loading) {
+      loadIcdPcs();
+    }
+  }
+
+  async function loadIcdCm() {
+    state.icdCm.loading = true;
+    el.icdCmLoading.classList.remove("hidden");
+    el.icdCmSummary.textContent = "正在載入 ICD-9 / ICD-10-CM / ICD-11 對照資料...";
+    try {
+      const res = await fetch("data/icd-cm.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state.icdCm.i9 = data.i9 || {};
+      state.icdCm.i11 = data.i11 || {};
+      const rows = data.rows || [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const d9 = state.icdCm.i9[r[0]] || ["", ""];
+        const c11s = r[4] || [];
+        const t11s = c11s.map((c) => state.icdCm.i11[c] || "").join(" ");
+        r._search = `${r[0]}\t${d9[0]}\t${d9[1]}\t${r[1]}\t${r[2]}\t${r[3]}\t${c11s.join(" ")}\t${t11s}`.toLowerCase();
+      }
+      state.icdCm.rows = rows;
+      state.icdCm.loaded = true;
+      filterIcdCm();
+    } catch (err) {
+      el.icdCmSummary.textContent = `載入失敗：${err.message}`;
+    } finally {
+      state.icdCm.loading = false;
+      el.icdCmLoading.classList.add("hidden");
+    }
+  }
+
+  function filterIcdCm() {
+    if (!state.icdCm.loaded) return;
+    const terms = parseQueryTerms(state.icdCm.query);
+    const only11 = state.icdCm.only11 === "has11";
+    const rows = state.icdCm.rows;
+    const matched = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (only11 && (!r[4] || r[4].length === 0)) continue;
+      if (terms.length > 0) {
+        const hay = r._search;
+        let ok = true;
+        for (let t = 0; t < terms.length; t++) {
+          if (!hay.includes(terms[t])) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) continue;
+      }
+      matched.push(r);
+    }
+
+    if (terms.length > 0) {
+      const first = terms[0];
+      matched.sort((a, b) => {
+        const aExact =
+          a[1].toLowerCase() === first ||
+          a[0].toLowerCase() === first ||
+          (a[4] && a[4].some((c) => c.toLowerCase() === first))
+            ? 0
+            : a[1].toLowerCase().startsWith(first) || a[0].toLowerCase().startsWith(first)
+            ? 1
+            : 2;
+        const bExact =
+          b[1].toLowerCase() === first ||
+          b[0].toLowerCase() === first ||
+          (b[4] && b[4].some((c) => c.toLowerCase() === first))
+            ? 0
+            : b[1].toLowerCase().startsWith(first) || b[0].toLowerCase().startsWith(first)
+            ? 1
+            : 2;
+        return aExact - bExact;
+      });
+    }
+
+    state.icdCm.filtered = matched;
+    state.icdCm.page = 1;
+    renderIcdCm();
+  }
+
+  function renderIcdCm() {
+    const list = state.icdCm.filtered;
+    const total = list.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (state.icdCm.page > totalPages) state.icdCm.page = totalPages;
+
+    const startIdx = (state.icdCm.page - 1) * PAGE_SIZE;
+    const endIdx = Math.min(startIdx + PAGE_SIZE, total);
+    const pageRows = list.slice(startIdx, endIdx);
+    const terms = parseQueryTerms(state.icdCm.query);
+    const { i9, i11 } = state.icdCm;
+
+    if (total === 0) {
+      el.icdCmSummary.innerHTML = `共找到 <strong>0</strong> 筆 ICD 診斷對應資料`;
+      el.icdCmResults.innerHTML = `<div class="state-card"><h2>找不到符合條件的診斷編碼</h2><p>請嘗試其他 ICD-9 / ICD-10 / ICD-11 代碼或中英文病名關鍵字。</p></div>`;
+      el.icdCmPageTop.innerHTML = "";
+      el.icdCmPageBottom.innerHTML = "";
+      return;
+    }
+
+    el.icdCmSummary.innerHTML = `共 <strong>${total.toLocaleString("zh-TW")}</strong> 筆對應資料（顯示第 ${startIdx + 1}–${endIdx} 筆）`;
+
+    el.icdCmResults.innerHTML = pageRows
+      .map((r) => {
+        const d9 = i9[r[0]] || ["", ""];
+        const c11s = r[4] || [];
+        const icd11Html = c11s.length
+          ? `<div class="icd-11-list">${c11s
+              .map(
+                (c11) => `
+                  <div class="icd-11-item">
+                    <div><button type="button" class="icd-code-btn icd11" data-copy-icd="${escapeHtml(c11)}" title="複製 ICD-11 代碼">${highlightText(c11, terms)}</button></div>
+                    <div class="icd-en">${highlightText(i11[c11] || "", terms)}</div>
+                  </div>
+                `
+              )
+              .join("")}</div>`
+          : `<div class="icd-en">尚無直接 ICD-11 對照</div>`;
+
+        return `
+          <article class="icd-card">
+            <div class="icd-cols">
+              <div class="icd-col">
+                <div class="icd-col-header">
+                  <span class="icd-ver-label">ICD-9-CM</span>
+                  <button type="button" class="icd-code-btn icd9" data-copy-icd="${escapeHtml(r[0])}" title="複製 ICD-9 代碼">${highlightText(r[0] || "-", terms)}</button>
+                </div>
+                <div class="icd-zh">${highlightText(d9[0] || "(無中文名稱)", terms)}</div>
+                <div class="icd-en">${highlightText(d9[1] || "", terms)}</div>
+              </div>
+              <div class="icd-col">
+                <div class="icd-col-header">
+                  <span class="icd-ver-label">ICD-10-CM</span>
+                  <button type="button" class="icd-code-btn icd10" data-copy-icd="${escapeHtml(r[1])}" title="複製 ICD-10 代碼">${highlightText(r[1] || "-", terms)}</button>
+                </div>
+                <div class="icd-zh">${highlightText(r[2] || "(無中文名稱)", terms)}</div>
+                <div class="icd-en">${highlightText(r[3] || "", terms)}</div>
+              </div>
+              <div class="icd-col">
+                <div class="icd-col-header">
+                  <span class="icd-ver-label">ICD-11 (WHO)</span>
+                </div>
+                ${icd11Html}
+              </div>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+
+    renderSimplePagination(el.icdCmPageTop, el.icdCmPageBottom, state.icdCm.page, totalPages);
+  }
+
+  async function loadIcdPcs() {
+    state.icdPcs.loading = true;
+    el.icdPcsLoading.classList.remove("hidden");
+    el.icdPcsSummary.textContent = "正在載入 ICD-10-PCS 處置編碼資料...";
+    try {
+      const res = await fetch("data/icd-pcs.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state.icdPcs.i9 = data.i9 || {};
+      const rows = data.rows || [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const d9 = state.icdPcs.i9[r[0]] || ["", ""];
+        const nhis = (r[4] || []).join(" ");
+        r._search = `${r[0]}\t${d9[0]}\t${d9[1]}\t${r[1]}\t${r[2]}\t${r[3]}\t${nhis}`.toLowerCase();
+      }
+      state.icdPcs.rows = rows;
+      state.icdPcs.loaded = true;
+      filterIcdPcs();
+    } catch (err) {
+      el.icdPcsSummary.textContent = `載入失敗：${err.message}`;
+    } finally {
+      state.icdPcs.loading = false;
+      el.icdPcsLoading.classList.add("hidden");
+    }
+  }
+
+  function filterIcdPcs() {
+    if (!state.icdPcs.loaded) return;
+    const terms = parseQueryTerms(state.icdPcs.query);
+    const onlyNhi = state.icdPcs.onlyNhi === "hasNhi";
+    const rows = state.icdPcs.rows;
+    const matched = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (onlyNhi && (!r[4] || r[4].length === 0)) continue;
+      if (terms.length > 0) {
+        const hay = r._search;
+        let ok = true;
+        for (let t = 0; t < terms.length; t++) {
+          if (!hay.includes(terms[t])) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) continue;
+      }
+      matched.push(r);
+    }
+
+    if (terms.length > 0) {
+      const first = terms[0];
+      matched.sort((a, b) => {
+        const aExact = a[1].toLowerCase() === first || a[0].toLowerCase() === first ? 0 : a[1].toLowerCase().startsWith(first) || a[0].toLowerCase().startsWith(first) ? 1 : 2;
+        const bExact = b[1].toLowerCase() === first || b[0].toLowerCase() === first ? 0 : b[1].toLowerCase().startsWith(first) || b[0].toLowerCase().startsWith(first) ? 1 : 2;
+        return aExact - bExact;
+      });
+    }
+
+    state.icdPcs.filtered = matched;
+    state.icdPcs.page = 1;
+    renderIcdPcs();
+  }
+
+  function renderIcdPcs() {
+    const list = state.icdPcs.filtered;
+    const total = list.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (state.icdPcs.page > totalPages) state.icdPcs.page = totalPages;
+
+    const startIdx = (state.icdPcs.page - 1) * PAGE_SIZE;
+    const endIdx = Math.min(startIdx + PAGE_SIZE, total);
+    const pageRows = list.slice(startIdx, endIdx);
+    const terms = parseQueryTerms(state.icdPcs.query);
+    const { i9 } = state.icdPcs;
+
+    if (total === 0) {
+      el.icdPcsSummary.innerHTML = `共找到 <strong>0</strong> 筆 ICD-10-PCS 處置編碼`;
+      el.icdPcsResults.innerHTML = `<div class="state-card"><h2>找不到符合條件的處置編碼</h2><p>請嘗試其他 ICD-10-PCS、ICD-9 處置碼或中英文處置關鍵字。</p></div>`;
+      el.icdPcsPageTop.innerHTML = "";
+      el.icdPcsPageBottom.innerHTML = "";
+      return;
+    }
+
+    el.icdPcsSummary.innerHTML = `共 <strong>${total.toLocaleString("zh-TW")}</strong> 筆處置編碼（顯示第 ${startIdx + 1}–${endIdx} 筆）`;
+
+    el.icdPcsResults.innerHTML = pageRows
+      .map((r) => {
+        const d9 = i9[r[0]] || ["", ""];
+        const nhis = r[4] || [];
+        const nhiHtml = nhis.length
+          ? `<div class="nhi-link-list">
+               <span>對應健保醫令：</span>
+               ${nhis.map((code) => `<button type="button" class="nhi-jump-btn" data-jump-nhi="${escapeHtml(code)}" title="前往查詢健保點數與規範">${highlightText(code, terms)}</button>`).join("")}
+             </div>`
+          : "";
+
+        return `
+          <article class="icd-card">
+            <div class="icd-cols icd-cols-2">
+              <div class="icd-col">
+                <div class="icd-col-header">
+                  <span class="icd-ver-label">ICD-10-PCS 處置編碼</span>
+                  <button type="button" class="icd-code-btn icd10" data-copy-icd="${escapeHtml(r[1])}" title="複製 ICD-10-PCS 代碼">${highlightText(r[1] || "-", terms)}</button>
+                </div>
+                <div class="icd-zh">${highlightText(r[2] || "(無中文名稱)", terms)}</div>
+                <div class="icd-en">${highlightText(r[3] || "", terms)}</div>
+              </div>
+              <div class="icd-col">
+                <div class="icd-col-header">
+                  <span class="icd-ver-label">對應 ICD-9-CM 處置</span>
+                  <button type="button" class="icd-code-btn icd9" data-copy-icd="${escapeHtml(r[0])}" title="複製 ICD-9 處置碼">${highlightText(r[0] || "-", terms)}</button>
+                </div>
+                <div class="icd-zh">${highlightText(d9[0] || "(無中文名稱)", terms)}</div>
+                <div class="icd-en">${highlightText(d9[1] || "", terms)}</div>
+              </div>
+            </div>
+            ${nhiHtml}
+          </article>
+        `;
+      })
+      .join("");
+
+    renderSimplePagination(el.icdPcsPageTop, el.icdPcsPageBottom, state.icdPcs.page, totalPages);
+  }
+
+  function bindIcdEvents() {
+    el.modeTabs.forEach((btn) => {
+      btn.addEventListener("click", () => switchMode(btn.dataset.mode));
+    });
+
+    // ICD-CM events
+    let cmTimer = null;
+    el.icdCmInput.addEventListener("input", () => {
+      const val = el.icdCmInput.value;
+      el.icdCmClearBtn.classList.toggle("hidden", !val);
+      clearTimeout(cmTimer);
+      cmTimer = setTimeout(() => {
+        state.icdCm.query = val;
+        filterIcdCm();
+      }, 140);
+    });
+
+    el.icdCmClearBtn.addEventListener("click", () => {
+      el.icdCmInput.value = "";
+      el.icdCmClearBtn.classList.add("hidden");
+      state.icdCm.query = "";
+      filterIcdCm();
+      el.icdCmInput.focus();
+    });
+
+    el.icdCmExamples.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-example]");
+      if (!btn) return;
+      el.icdCmInput.value = btn.dataset.example;
+      el.icdCmClearBtn.classList.remove("hidden");
+      state.icdCm.query = btn.dataset.example;
+      filterIcdCm();
+    });
+
+    el.icdCmOnly11.addEventListener("change", () => {
+      state.icdCm.only11 = el.icdCmOnly11.value;
+      filterIcdCm();
+    });
+
+    el.icdCmResults.addEventListener("click", (e) => {
+      const copyBtn = e.target.closest("[data-copy-icd]");
+      if (copyBtn) {
+        copyText(copyBtn.dataset.copyIcd, `編碼 ${copyBtn.dataset.copyIcd}`);
+      }
+    });
+
+    el.icdCmPageBottom.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-page]");
+      if (!btn || btn.disabled) return;
+      state.icdCm.page = Number(btn.dataset.page);
+      renderIcdCm();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    // ICD-PCS events
+    let pcsTimer = null;
+    el.icdPcsInput.addEventListener("input", () => {
+      const val = el.icdPcsInput.value;
+      el.icdPcsClearBtn.classList.toggle("hidden", !val);
+      clearTimeout(pcsTimer);
+      pcsTimer = setTimeout(() => {
+        state.icdPcs.query = val;
+        filterIcdPcs();
+      }, 140);
+    });
+
+    el.icdPcsClearBtn.addEventListener("click", () => {
+      el.icdPcsInput.value = "";
+      el.icdPcsClearBtn.classList.add("hidden");
+      state.icdPcs.query = "";
+      filterIcdPcs();
+      el.icdPcsInput.focus();
+    });
+
+    el.icdPcsExamples.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-example]");
+      if (!btn) return;
+      el.icdPcsInput.value = btn.dataset.example;
+      el.icdPcsClearBtn.classList.remove("hidden");
+      state.icdPcs.query = btn.dataset.example;
+      filterIcdPcs();
+    });
+
+    el.icdPcsOnlyNhi.addEventListener("change", () => {
+      state.icdPcs.onlyNhi = el.icdPcsOnlyNhi.value;
+      filterIcdPcs();
+    });
+
+    el.icdPcsResults.addEventListener("click", (e) => {
+      const copyBtn = e.target.closest("[data-copy-icd]");
+      if (copyBtn) {
+        copyText(copyBtn.dataset.copyIcd, `處置碼 ${copyBtn.dataset.copyIcd}`);
+        return;
+      }
+      const jumpBtn = e.target.closest("[data-jump-nhi]");
+      if (jumpBtn) {
+        const code = jumpBtn.dataset.jumpNhi;
+        switchMode("nhi");
+        el.searchInput.value = code;
+        el.clearSearchBtn.classList.remove("hidden");
+        state.query = code;
+        applyFilters();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+
+    el.icdPcsPageBottom.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-page]");
+      if (!btn || btn.disabled) return;
+      state.icdPcs.page = Number(btn.dataset.page);
+      renderIcdPcs();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 
