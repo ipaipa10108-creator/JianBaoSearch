@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>健保支付標準查詢｜全民健康保險醫療服務給付項目及支付標準</title>
+  <meta name="description" content="即時查詢台灣健保署最新全民健康保險醫療服務給付項目及支付標準，支援診療項目代碼、中英文名稱、點數、備註與表別篩選，每日自動同步健保署開放資料。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 6v12M6 12h12" />
+            <rect x="3" y="3" width="18" height="18" rx="4" />
+          </svg>
+        </div>
+        <div>
+          <h1>健保支付標準查詢</h1>
+          <p class="subtitle">全民健康保險醫療服務給付項目及支付標準</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="meta-badge" id="dataStatusBadge" title="資料來源：政府資料開放平臺 174450">
+          <span class="meta-label">健保署更新：</span>
+          <span class="meta-value" id="metaUpdatedDate">載入中...</span>
+          <span class="meta-divider">·</span>
+          <span class="meta-value" id="metaTotalCount">-- 項</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="exportCsvBtn" title="匯出目前篩選結果為 CSV">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>匯出 CSV</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" id="infoModalBtn" title="資料來源與自動更新說明">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>更新資訊</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <section class="search-panel" aria-label="搜尋與篩選條件">
+      <div class="search-box-wrap">
+        <label for="searchInput" class="sr-only">搜尋診療項目代碼、中文名稱、英文名稱或備註</label>
+        <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          type="search"
+          id="searchInput"
+          class="search-input"
+          placeholder="輸入代碼、中文/英文名稱或備註關鍵字（多關鍵字請用空格分隔，例如：超音波 腹部、00101B）"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
+        <button type="button" id="clearSearchBtn" class="clear-btn hidden" aria-label="清除搜尋">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="filters-row">
+        <div class="filter-group" role="group" aria-label="代碼表別篩選">
+          <span class="filter-label">表別：</span>
+          <div class="chip-list" id="tierFilters">
+            <button type="button" class="chip active" data-tier="all">全部</button>
+            <button type="button" class="chip" data-tier="C" title="各級特約醫事服務機構（含基層診所）皆可申報">C 含基層診所</button>
+            <button type="button" class="chip" data-tier="B" title="地區醫院以上（醫院層級）">B 醫院</button>
+            <button type="button" class="chip" data-tier="A" title="醫學中心 / 區域醫院">A 醫學中心/區域</button>
+            <button type="button" class="chip" data-tier="P" title="給付改善方案 / 試辦計畫">P 專案計畫</button>
+            <button type="button" class="chip" data-tier="other" title="牙科、中醫、論病例計酬等其他代碼">其他</button>
+          </div>
+        </div>
+
+        <div class="filter-controls">
+          <button type="button" id="favFilterBtn" class="chip chip-fav" aria-pressed="false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span>常用收藏</span>
+            <span class="fav-count" id="favCountBadge">0</span>
+          </button>
+
+          <label class="select-wrap">
+            <span class="sr-only">生效狀態</span>
+            <select id="statusFilter" class="select-input">
+              <option value="active">現行有效項目</option>
+              <option value="all">全部狀態</option>
+              <option value="inactive">已停用 / 非現行</option>
+            </select>
+          </label>
+
+          <label class="select-wrap">
+            <span class="sr-only">排序方式</span>
+            <select id="sortSelect" class="select-input">
+              <option value="relevance">預設 / 相關度</option>
+              <option value="code_asc">代碼 A → Z</option>
+              <option value="points_desc">點數高 → 低</option>
+              <option value="points_asc">點數低 → 高</option>
+              <option value="date_desc">最新生效日</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="results-section" aria-label="查詢結果">
+      <div class="results-toolbar">
+        <p class="results-summary" id="resultsSummary">正在載入健保支付標準資料...</p>
+        <div class="pagination-inline" id="paginationTop"></div>
+      </div>
+
+      <div id="loadingState" class="state-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>正在載入最新健保支付標準資料...</p>
+      </div>
+
+      <div id="emptyState" class="state-card hidden">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <h2>找不到符合條件的項目</h2>
+        <p>請嘗試縮短關鍵字、改用空白分隔多個詞彙，或切換表別與生效狀態篩選。</p>
+        <button type="button" class="btn btn-secondary" id="resetFiltersBtn">重設所有篩選</button>
+      </div>
+
+      <!-- Desktop Table View -->
+      <div class="table-container hidden" id="tableContainer">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="col-fav" aria-label="收藏"></th>
+              <th class="col-code">診療項目代碼</th>
+              <th class="col-name">項目名稱（中文 / 英文）</th>
+              <th class="col-points">健保支付點數</th>
+              <th class="col-dates">生效起迄日</th>
+              <th class="col-note">備註</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Mobile Card View -->
+      <div class="card-list hidden" id="cardList"></div>
+
+      <div class="pagination-bar" id="paginationBottom"></div>
+    </section>
+  </main>
+
+  <!-- Item Detail Drawer / Modal -->
+  <div class="modal-backdrop hidden" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="modal-drawer">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="code-badge code-badge-lg" id="detailCode">00101B</span>
+          <span class="tier-pill" id="detailTierPill">醫院層級</span>
+        </div>
+        <button type="button" class="icon-btn" id="closeDetailBtn" aria-label="關閉詳細資訊">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <h2 id="detailTitle" class="detail-zh-title"></h2>
+        <p id="detailEnTitle" class="detail-en-title"></p>
+
+        <div class="detail-metrics">
+          <div class="metric-box">
+            <span class="metric-label">健保支付點數</span>
+            <span class="metric-value" id="detailPoints">0 點</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">生效起日</span>
+            <span class="metric-value metric-date" id="detailStartDate">-</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">生效迄日</span>
+            <span class="metric-value metric-date" id="detailEndDate">-</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>表別與適用層級說明</h3>
+          <p id="detailTierDesc" class="detail-text"></p>
+        </div>
+
+        <div class="detail-section">
+          <h3>備註 / 申報規範</h3>
+          <div id="detailNote" class="detail-note"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="detailFavBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span id="detailFavText">加入常用</span>
+        </button>
+        <button type="button" class="btn btn-secondary" id="detailCopyCodeBtn">複製代碼</button>
+        <button type="button" class="btn btn-primary" id="detailCopyAllBtn">複製完整資訊</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info / Auto-Update Modal -->
+  <div class="modal-backdrop hidden" id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 id="infoModalTitle" class="dialog-title">資料來源與自動更新機制</h2>
+        <button type="button" class="icon-btn" id="closeInfoBtn" aria-label="關閉">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <dl class="info-list">
+          <dt>資料來源</dt>
+          <dd>衛生福利部中央健康保險署 — <a href="https://data.gov.tw/dataset/174450" target="_blank" rel="noopener noreferrer">政府資料開放平臺 (174450)</a></dd>
+          <dt>健保署最後異動時間</dt>
+          <dd id="infoSourceModified">-</dd>
+          <dt>系統同步時間</dt>
+          <dd id="infoSyncedAt">-</dd>
+          <dt>收載項目總數</dt>
+          <dd id="infoTotalCount">-</dd>
+          <dt>自動更新方式</dt>
+          <dd>透過 GitHub Actions 每日台灣時間 09:00 自動向健保署開放資料平台檢查並同步最新支付標準；若資料有異動會自動更新並重新部署網站。</dd>
+        </dl>
+        <div class="info-note">
+          <strong>提示：</strong>本工具僅供醫療服務代碼與點數快速查詢參考，實際申報規定仍以衛生福利部中央健康保險署最新公告為準。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

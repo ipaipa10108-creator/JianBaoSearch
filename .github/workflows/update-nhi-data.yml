@@ -1,0 +1,38 @@
+name: Auto Update NHI Fee Schedule
+
+on:
+  schedule:
+    # Run daily at 01:00 UTC (09:00 Asia/Taipei, after NHI's 07:00 daily release)
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch latest NHI fee schedule
+        run: python3 scripts/update_data.py
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet data/fee-schedule.json; then
+            echo "No changes in fee-schedule.json"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/fee-schedule.json data/meta.json
+          DATE_STR=$(TZ=Asia/Taipei date +"%Y-%m-%d")
+          git commit -m "chore(data): update NHI fee schedule ($DATE_STR)"
+          git push
