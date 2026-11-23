@@ -359,6 +359,15 @@
             </svg>
           </button>
         </div>
+
+        <div class="ai-options-row">
+          <label class="ai-checkbox-label">
+            <input type="checkbox" id="aiAllowClarifyCheckbox" checked />
+            <span class="ai-checkbox-title">允許 AI 反問必要性問題</span>
+            <span class="ai-checkbox-hint">（條件不足時先追問關鍵臨床資訊，讓編碼更精準）</span>
+          </label>
+        </div>
+
         <div class="filters-row" style="margin-top:10px;padding-top:10px">
           <div class="filter-group model-switch-wrap">
             <span class="filter-label">目前模型：</span>
@@ -387,7 +396,11 @@
         <section class="ai-results-panel" aria-label="AI 查詢結果">
           <div id="aiLoadingState" class="state-card hidden">
             <div class="spinner" aria-hidden="true"></div>
-            <p id="aiLoadingText">AI 正在分析語意並比對健保支付標準、ICD 診斷與 ICD 處置資料庫...</p>
+            <p id="aiLoadingText" class="ai-progress-title">正在準備 AI 查詢...</p>
+            <div class="ai-progress-track" aria-hidden="true">
+              <div id="aiProgressBar" class="ai-progress-fill" style="width:15%"></div>
+            </div>
+            <p id="aiLoadingMeta" class="ai-progress-meta">已耗時 0 秒 · 您可先切換其他分頁或離開畫面，完成後會自動儲存於左側歷史紀錄</p>
           </div>
           <div id="aiEmptyState" class="state-card">
             <h2>AI 跨庫智慧查詢</h2>

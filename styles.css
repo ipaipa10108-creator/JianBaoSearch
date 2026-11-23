@@ -1935,3 +1935,93 @@ mark {
   border-top: 1px solid var(--border-color);
   margin-top: 2px;
 }
+
+/* AI Options Row & Live Progress Bar */
+.ai-options-row {
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.ai-progress-title {
+  font-weight: 700;
+  color: var(--text-primary) !important;
+  margin-bottom: 10px !important;
+}
+
+.ai-progress-track {
+  width: 100%;
+  max-width: 380px;
+  height: 8px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.ai-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.ai-progress-meta {
+  font-size: 0.8rem !important;
+  color: var(--text-muted) !important;
+  max-width: 460px;
+  margin: 0 auto !important;
+}
+
+/* AI Clarifying Questions Card */
+.ai-clarify-card {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--amber);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.ai-clarify-card h3 {
+  margin: 0 0 8px;
+  font-size: 0.98rem;
+  color: var(--amber);
+}
+
+.ai-clarify-list {
+  margin: 10px 0 14px;
+  padding-left: 20px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.ai-clarify-list li {
+  margin-bottom: 6px;
+}
+
+.ai-status-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.ai-status-pill.pending {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.ai-status-pill.clarify {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.ai-status-pill.error {
+  background: var(--rose-soft);
+  color: var(--rose);
+}

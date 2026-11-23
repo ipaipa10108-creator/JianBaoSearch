@@ -102,12 +102,15 @@
     aiQuickConfigBtn: document.getElementById("aiQuickConfigBtn"),
     aiPromptInput: document.getElementById("aiPromptInput"),
     aiRunBtn: document.getElementById("aiRunBtn"),
+    aiAllowClarifyCheckbox: document.getElementById("aiAllowClarifyCheckbox"),
     aiCurrentModelBadge: document.getElementById("aiCurrentModelBadge"),
     aiRecentModelsMenu: document.getElementById("aiRecentModelsMenu"),
     aiHistoryList: document.getElementById("aiHistoryList"),
     aiClearHistoryBtn: document.getElementById("aiClearHistoryBtn"),
     aiLoadingState: document.getElementById("aiLoadingState"),
     aiLoadingText: document.getElementById("aiLoadingText"),
+    aiProgressBar: document.getElementById("aiProgressBar"),
+    aiLoadingMeta: document.getElementById("aiLoadingMeta"),
     aiEmptyState: document.getElementById("aiEmptyState"),
     aiResultsContent: document.getElementById("aiResultsContent"),
     icdCmInput: document.getElementById("icdCmInput"),
@@ -1750,12 +1753,74 @@
     return data.choices?.[0]?.message?.content || "";
   }
 
-  async function callAiApi(userQuery) {
+  function parseAiJsonSafe(rawText, userQuery) {
+    const noThink = String(rawText || "")
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
+
+    const firstBrace = noThink.indexOf("{");
+    const lastBrace = noThink.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = noThink.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        try {
+          const fixed = candidate.replace(/,\s*([}\]])/g, "$1");
+          return JSON.parse(fixed);
+        } catch {
+          // fall through to graceful text extraction
+        }
+      }
+    }
+
+    // Graceful fallback if free model returned plain text instead of strict JSON
+    const icd10Codes = [...new Set(noThink.match(/\b[A-TV-Z][0-9]{2}(?:\.[0-9A-Z]{1,4})?\b/g) || [])].slice(0, 6);
+    const nhiCodes = [...new Set(noThink.match(/\b[0-9]{5}[A-Z]\b/g) || [])].slice(0, 6);
+    const pcsCodes = [...new Set(noThink.match(/\b[0-9A-HJ-NP-Z]{7}\b/g) || [])].slice(0, 6);
+    const kws = userQuery.split(/[\s,，、；;]+/).filter((w) => w.length >= 2).slice(0, 4);
+
+    return {
+      needsClarification: false,
+      clarifyingQuestions: [],
+      clinicalSummary: noThink.slice(0, 600) || `已完成「${userQuery}」之文字解析。`,
+      nhiKeywords: kws,
+      nhiCodes,
+      icdKeywords: kws,
+      icd10Codes,
+      pcsKeywords: kws,
+      pcsCodes,
+      whyListed: {
+        nhi: "模型本次以純文字回覆，系統已自動擷取關鍵字與代碼比對健保支付標準。",
+        icd: "系統已從回覆與查詢語句中比對對應的 ICD 診斷編碼。",
+        pcs: "系統已從回覆與查詢語句中比對對應的 ICD-10-PCS 處置編碼。",
+      },
+      nextCriteriaAndProgression: [
+        "建議確認實際病歷記載、影像／病理報告及手術途徑，以核對正確編碼與健保部章節。",
+      ],
+    };
+  }
+
+  async function callAiApi(userQuery, allowClarify = true) {
+    const clarifyRule = allowClarify
+      ? [
+          "【反問機制（已啟用）】",
+          "如果使用者的查詢條件過於簡略或有歧義，缺少決定正確編碼或健保 2-2-7 / 2-2-6 認定的關鍵臨床資訊（例如：門診或住院、手術途徑為開放或內視鏡、病灶部位/分期、是否為初次診斷等），請將 needsClarification 設為 true，並在 clarifyingQuestions 列出 1 到 3 個最關鍵、簡潔的繁體中文問題反問使用者。",
+          "如果資訊已足夠判斷，則將 needsClarification 設為 false，clarifyingQuestions 設為空陣列 []，並完整填寫下方所有欄位。",
+        ].join("\n")
+      : "【反問機制（已關閉）】請務必將 needsClarification 設為 false，直接依據現有資訊提供最完整的編碼候選與說明。";
+
     const systemPrompt = [
       AI_FOCUSED_PERSONA,
       "",
-      "請根據使用者的自然語言醫療描述，回傳嚴格的 JSON 格式（不要包含 markdown ```json 標記），結構如下：",
+      clarifyRule,
+      "",
+      "請根據使用者的自然語言醫療描述，只回傳單一 JSON 物件（不要加入 ```json 或其他說明文字），結構如下：",
       "{",
+      '  "needsClarification": false,',
+      '  "clarifyingQuestions": [],',
       '  "clinicalSummary": "簡短繁體中文臨床判讀、編碼原則與客觀理賠要件摘要",',
       '  "nhiKeywords": ["2到4個最適合搜尋台灣健保支付標準的中文關鍵字或醫令代碼"],',
       '  "nhiCodes": ["若知道確切健保代碼可列於此"],',
@@ -1784,10 +1849,7 @@
       true
     );
 
-    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("AI 回傳格式非預期 JSON，請重試。");
-    return JSON.parse(jsonMatch[0]);
+    return parseAiJsonSafe(rawText, userQuery);
   }
 
   async function callAiFollowUp(entry, followUpQuestion) {
@@ -1921,7 +1983,34 @@
     });
   }
 
-  async function runAiSearch(queryText) {
+  let aiProgressTimer = null;
+
+  function stopAiProgressTimer() {
+    if (aiProgressTimer) {
+      clearInterval(aiProgressTimer);
+      aiProgressTimer = null;
+    }
+  }
+
+  function startAiProgressUi(startedAt, stepText, percent) {
+    el.aiEmptyState.classList.add("hidden");
+    el.aiResultsContent.classList.add("hidden");
+    el.aiLoadingState.classList.remove("hidden");
+    el.aiLoadingText.textContent = stepText;
+    if (el.aiProgressBar) el.aiProgressBar.style.width = `${percent}%`;
+
+    const updateTimerText = () => {
+      const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      if (el.aiLoadingMeta) {
+        el.aiLoadingMeta.textContent = `已耗時 ${sec} 秒 · 您可先切換其他分頁或離開畫面，完成後會自動儲存於歷史紀錄`;
+      }
+    };
+    updateTimerText();
+    stopAiProgressTimer();
+    aiProgressTimer = setInterval(updateTimerText, 1000);
+  }
+
+  async function runAiSearch(queryText, options = {}) {
     const q = (queryText || "").trim();
     if (!q) {
       showToast("請輸入查詢內容");
@@ -1935,53 +2024,107 @@
       return;
     }
 
+    const allowClarify =
+      typeof options.allowClarify === "boolean"
+        ? options.allowClarify
+        : Boolean(el.aiAllowClarifyCheckbox ? el.aiAllowClarifyCheckbox.checked : true);
+
     switchMode("ai");
     el.aiPromptInput.value = q;
-    el.aiEmptyState.classList.add("hidden");
-    el.aiResultsContent.classList.add("hidden");
-    el.aiLoadingState.classList.remove("hidden");
-    el.aiRunBtn.disabled = true;
+
+    const startedAt = Date.now();
+    const entry = options.existingEntry || {
+      id: `${startedAt}_${Math.random().toString(36).slice(2, 7)}`,
+      query: q,
+      timestamp: new Date().toLocaleString("zh-TW", { hour12: false }),
+      provider,
+      model,
+      status: "pending",
+      startedAt,
+      clinicalSummary: "",
+      clarifyingQuestions: [],
+      whyListed: {},
+      nextCriteriaAndProgression: [],
+      followUps: [],
+      nhiHits: [],
+      cmHits: [],
+      pcsHits: [],
+      errorMessage: "",
+    };
+
+    entry.query = q;
+    entry.provider = provider;
+    entry.model = model;
+    entry.status = "pending";
+    entry.startedAt = startedAt;
+    entry.errorMessage = "";
+
+    if (!options.existingEntry) {
+      state.ai.history.unshift(entry);
+      if (state.ai.history.length > 50) state.ai.history.pop();
+    }
+    state.ai.activeHistoryId = entry.id;
+    saveAiHistory();
+    renderAiHistory();
+
+    startAiProgressUi(startedAt, "步驟 1/3：正在載入本機健保與 ICD 資料庫...", 22);
 
     try {
-      el.aiLoadingText.textContent = "步驟 1/2：AI 正在解析自然語言與醫療代碼...";
-      const [aiPlan] = await Promise.all([
-        callAiApi(q),
+      const dbPromise = Promise.all([
         state.icdCm.loaded ? Promise.resolve() : loadIcdCm(),
         state.icdPcs.loaded ? Promise.resolve() : loadIcdPcs(),
       ]);
 
-      el.aiLoadingText.textContent = "步驟 2/2：正在比對健保支付標準與 ICD 資料庫...";
-      const nhiHits = matchLocalNhi(aiPlan);
-      const cmHits = matchLocalIcdCm(aiPlan);
-      const pcsHits = matchLocalIcdPcs(aiPlan);
+      if (state.ai.activeHistoryId === entry.id) {
+        startAiProgressUi(startedAt, `步驟 2/3：已送出至 ${model}，等待 AI 分析回覆...`, 55);
+      }
 
-      const entry = {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        query: q,
-        timestamp: new Date().toLocaleString("zh-TW", { hour12: false }),
-        provider,
-        model,
-        clinicalSummary: aiPlan.clinicalSummary || "",
-        whyListed: aiPlan.whyListed || {},
-        nextCriteriaAndProgression: aiPlan.nextCriteriaAndProgression || [],
-        followUps: [],
-        nhiHits,
-        cmHits,
-        pcsHits,
-      };
+      const [aiPlan] = await Promise.all([callAiApi(q, allowClarify), dbPromise]);
 
-      state.ai.history.unshift(entry);
-      if (state.ai.history.length > 50) state.ai.history.pop();
-      state.ai.activeHistoryId = entry.id;
+      if (allowClarify && aiPlan.needsClarification && Array.isArray(aiPlan.clarifyingQuestions) && aiPlan.clarifyingQuestions.length > 0) {
+        entry.status = "clarify";
+        entry.clinicalSummary = aiPlan.clinicalSummary || "為提供更精準的健保支付標準與 ICD 編碼，請補充以下關鍵資訊：";
+        entry.clarifyingQuestions = aiPlan.clarifyingQuestions;
+        saveAiHistory();
+        renderAiHistory();
+        if (state.ai.activeHistoryId === entry.id) {
+          stopAiProgressTimer();
+          renderAiResult(entry);
+        }
+        showToast("AI 需要您補充幾個必要條件");
+        return;
+      }
+
+      if (state.ai.activeHistoryId === entry.id) {
+        startAiProgressUi(startedAt, "步驟 3/3：正在比對健保支付標準與 ICD 資料庫...", 88);
+      }
+
+      entry.nhiHits = matchLocalNhi(aiPlan);
+      entry.cmHits = matchLocalIcdCm(aiPlan);
+      entry.pcsHits = matchLocalIcdPcs(aiPlan);
+      entry.clinicalSummary = aiPlan.clinicalSummary || "";
+      entry.whyListed = aiPlan.whyListed || {};
+      entry.nextCriteriaAndProgression = aiPlan.nextCriteriaAndProgression || [];
+      entry.clarifyingQuestions = [];
+      entry.status = "done";
+
       saveAiHistory();
       renderAiHistory();
-      renderAiResult(entry);
+      if (state.ai.activeHistoryId === entry.id) {
+        stopAiProgressTimer();
+        renderAiResult(entry);
+      }
+      showToast(`AI 查詢完成：「${q.slice(0, 14)}${q.length > 14 ? "…" : ""}」`);
     } catch (err) {
-      el.aiEmptyState.classList.remove("hidden");
-      el.aiEmptyState.innerHTML = `<h2 style="color:var(--rose)">AI 查詢失敗</h2><p>${escapeHtml(err.message)}</p>`;
-    } finally {
-      el.aiLoadingState.classList.add("hidden");
-      el.aiRunBtn.disabled = false;
+      entry.status = "error";
+      entry.errorMessage = err.message || "未知錯誤";
+      saveAiHistory();
+      renderAiHistory();
+      if (state.ai.activeHistoryId === entry.id) {
+        stopAiProgressTimer();
+        renderAiResult(entry);
+      }
+      showToast(`AI 查詢失敗：${entry.errorMessage.slice(0, 40)}`);
     }
   }
 
@@ -1992,23 +2135,76 @@
       return;
     }
     el.aiHistoryList.innerHTML = list
-      .map(
-        (h) => `
+      .map((h) => {
+        let statusTag = "";
+        let metaText = `${escapeHtml(h.timestamp)} · 健保${(h.nhiHits || []).length} / 診斷${(h.cmHits || []).length} / 處置${(h.pcsHits || []).length}`;
+        if (h.status === "pending") {
+          statusTag = `<span class="ai-status-pill pending">查詢中</span>`;
+          metaText = `${escapeHtml(h.timestamp)} · 背景處理中...`;
+        } else if (h.status === "clarify") {
+          statusTag = `<span class="ai-status-pill clarify">待補充</span>`;
+          metaText = `${escapeHtml(h.timestamp)} · AI 反問 ${(h.clarifyingQuestions || []).length} 個問題`;
+        } else if (h.status === "error") {
+          statusTag = `<span class="ai-status-pill error">失敗</span>`;
+          metaText = `${escapeHtml(h.timestamp)} · 點擊可重試`;
+        }
+        return `
       <div class="ai-history-item ${h.id === state.ai.activeHistoryId ? "active" : ""}" data-hist-id="${escapeHtml(h.id)}">
         <button type="button" class="ai-history-del" data-del-hist="${escapeHtml(h.id)}" title="刪除此筆紀錄" aria-label="刪除">✕</button>
-        <div class="ai-history-query">${escapeHtml(h.query)}</div>
-        <div class="ai-history-meta">${escapeHtml(h.timestamp)} · 健保${h.nhiHits.length} / 診斷${h.cmHits.length} / 處置${h.pcsHits.length}</div>
+        <div class="ai-history-query">${statusTag}${escapeHtml(h.query)}</div>
+        <div class="ai-history-meta">${metaText}</div>
       </div>
-    `
-      )
+    `;
+      })
       .join("");
   }
 
   function renderAiResult(entry) {
     if (!entry) return;
+    stopAiProgressTimer();
+
+    if (entry.status === "pending") {
+      startAiProgressUi(entry.startedAt || Date.now(), `背景查詢中（${entry.model}），等待 AI 回覆...`, 60);
+      return;
+    }
+
     el.aiEmptyState.classList.add("hidden");
     el.aiLoadingState.classList.add("hidden");
     el.aiResultsContent.classList.remove("hidden");
+
+    if (entry.status === "error") {
+      el.aiResultsContent.innerHTML = `
+        <div class="state-card">
+          <h2 style="color:var(--rose)">AI 查詢失敗</h2>
+          <p>${escapeHtml(entry.errorMessage || "連線逾時或模型回傳異常")}</p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary" data-retry-hist="${escapeHtml(entry.id)}">重新查詢</button>
+            <button type="button" class="btn btn-secondary" data-del-current-hist="${escapeHtml(entry.id)}">刪除此筆紀錄</button>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    if (entry.status === "clarify") {
+      const qs = (entry.clarifyingQuestions || []).map((q) => `<li>${escapeHtml(q)}</li>`).join("");
+      el.aiResultsContent.innerHTML = `
+        <div class="ai-clarify-card">
+          <div class="label-row" style="margin-bottom:8px">
+            <h3>AI 需要補充以下資訊以精準判斷（${escapeHtml(entry.model)}）</h3>
+            <button type="button" class="btn btn-ghost btn-sm" data-del-current-hist="${escapeHtml(entry.id)}" style="color:var(--rose)">刪除此筆</button>
+          </div>
+          <p style="margin:0 0 8px;font-size:0.86rem;color:var(--text-secondary)">${escapeHtml(entry.clinicalSummary || "")}</p>
+          <ol class="ai-clarify-list">${qs}</ol>
+          <div class="ai-chat-form">
+            <input type="text" id="aiClarifyAnswerInput" class="text-input" placeholder="請輸入補充說明（例如：住院手術、腹腔鏡微創、初次診斷...）" autocomplete="off" />
+            <button type="button" class="btn btn-primary" data-submit-clarify="${escapeHtml(entry.id)}">送出補充並查詢</button>
+            <button type="button" class="btn btn-secondary" data-skip-clarify="${escapeHtml(entry.id)}">略過反問直接查</button>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     const nhiHtml = entry.nhiHits.length
       ? entry.nhiHits
@@ -2437,7 +2633,40 @@
       }
     };
 
+    const handleClarifySubmit = (entryId) => {
+      const entry = state.ai.history.find((h) => h.id === entryId);
+      const inputEl = document.getElementById("aiClarifyAnswerInput");
+      if (!entry || !inputEl) return;
+      const ans = inputEl.value.trim();
+      if (!ans) {
+        showToast("請輸入補充條件，或點選「略過反問直接查」");
+        return;
+      }
+      const refinedQuery = `${entry.query}（補充條件：${ans}）`;
+      runAiSearch(refinedQuery, { existingEntry: entry, allowClarify: false });
+    };
+
     el.aiResultsContent.addEventListener("click", (e) => {
+      const retryBtn = e.target.closest("[data-retry-hist]");
+      if (retryBtn) {
+        e.stopPropagation();
+        const entry = state.ai.history.find((h) => h.id === retryBtn.dataset.retryHist);
+        if (entry) runAiSearch(entry.query, { existingEntry: entry });
+        return;
+      }
+      const submitClarifyBtn = e.target.closest("[data-submit-clarify]");
+      if (submitClarifyBtn) {
+        e.stopPropagation();
+        handleClarifySubmit(submitClarifyBtn.dataset.submitClarify);
+        return;
+      }
+      const skipClarifyBtn = e.target.closest("[data-skip-clarify]");
+      if (skipClarifyBtn) {
+        e.stopPropagation();
+        const entry = state.ai.history.find((h) => h.id === skipClarifyBtn.dataset.skipClarify);
+        if (entry) runAiSearch(entry.query, { existingEntry: entry, allowClarify: false });
+        return;
+      }
       const followBtn = e.target.closest("[data-followup-id]");
       if (followBtn) {
         e.stopPropagation();
@@ -2478,6 +2707,12 @@
         const sendBtn = document.getElementById("aiFollowUpSendBtn");
         if (sendBtn && sendBtn.dataset.followupId) {
           handleFollowUpSubmit(sendBtn.dataset.followupId);
+        }
+      } else if (e.key === "Enter" && e.target && e.target.id === "aiClarifyAnswerInput") {
+        e.preventDefault();
+        const submitBtn = el.aiResultsContent.querySelector("[data-submit-clarify]");
+        if (submitBtn && submitBtn.dataset.submitClarify) {
+          handleClarifySubmit(submitBtn.dataset.submitClarify);
         }
       }
     });
