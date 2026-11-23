@@ -1684,3 +1684,123 @@ mark {
   flex-wrap: wrap;
 }
 
+/* AI Explanation & Follow-up Chat */
+.ai-explain-card,
+.ai-chat-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.ai-explain-card h3,
+.ai-chat-card h3 {
+  margin: 0 0 10px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ai-integrity-banner {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.ai-explain-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.ai-explain-block {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.ai-explain-block h4 {
+  margin: 0 0 6px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ai-explain-block p,
+.ai-explain-list {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+.ai-explain-list {
+  padding-left: 18px;
+}
+
+.ai-explain-list li {
+  margin-bottom: 4px;
+}
+
+.ai-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.ai-chat-msg {
+  padding: 10px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 0.87rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-chat-msg.user {
+  align-self: flex-end;
+  max-width: 86%;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.ai-chat-msg.assistant {
+  align-self: flex-start;
+  max-width: 94%;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.ai-chat-role {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.78;
+  margin-bottom: 3px;
+}
+
+.ai-chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ai-chat-form .text-input {
+  flex: 1;
+  min-width: 220px;
+  height: 40px;
+}

@@ -1637,80 +1637,143 @@
     }
   }
 
-  async function callAiApi(userQuery) {
+  const AI_FOCUSED_PERSONA = [
+    "【核心角色與專業準則】",
+    "你是台灣健保支付標準、國際疾病分類編碼（ICD-9-CM / ICD-10-CM / ICD-11 / ICD-10-PCS）與醫療險理賠要件客觀評估顧問。",
+    "1. 診斷與編碼精準性：必須嚴格依據臨床描述給予正確的 ICD 診斷碼、ICD-10-PCS 處置碼及台灣健保支付標準對應關鍵字。",
+    "2. 客觀理賠要件檢視：針對健保部章節（例如第二部第二章第七節 2-2-7「手術」與第六節 2-2-6「治療處置」、第三部牙科手術 3-3-4-3、住院必要性、病理/影像佐證等），客觀說明該診斷或處置與常見保險條款要件的符合情形及應完備之客觀病歷紀錄。",
+    "3. 醫學倫理紅線（嚴禁扭曲診斷）：絕對禁止為了迎合保險理賠或提高給付而建議醫師/病患更改、誇大、隱匿或扭曲真實醫療診斷或手術紀錄；若現行處置屬於健保 2-2-6 處置而非 2-2-7 手術，須誠實說明其本質差異與客觀醫療事實。",
+  ].join("\n");
+
+  async function callAiRequest(messages, expectJson = false) {
     const { provider, apiKey, model, baseUrl } = getActiveAiProviderCfg();
     if (!apiKey) throw new Error("尚未設定 API Key，請點擊右上角齒輪圖示進行設定。");
     if (!model) throw new Error("尚未選擇 AI 模型，請先至設定視窗選擇模型。");
 
-    const systemPrompt = [
-      "你是台灣健保申報與國際疾病分類(ICD-9-CM, ICD-10-CM, ICD-11, ICD-10-PCS)專家。",
-      "請根據使用者的自然語言醫療描述，回傳嚴格的 JSON 格式（不要包含 markdown ```json 標記），結構如下：",
-      "{",
-      '  "clinicalSummary": "簡短繁體中文臨床與申報判讀摘要",',
-      '  "nhiKeywords": ["2到4個最適合搜尋台灣健保支付標準的中文關鍵字或醫令代碼"],',
-      '  "nhiCodes": ["若知道確切健保代碼可列於此"],',
-      '  "icdKeywords": ["2到4個最適合搜尋ICD診斷的中英文疾病關鍵字"],',
-      '  "icd10Codes": ["可能的ICD-10-CM代碼如 E11.9, K80.00"],',
-      '  "pcsKeywords": ["2到4個最適合搜尋ICD-10-PCS處置的中英文術式關鍵字"],',
-      '  "pcsCodes": ["可能的ICD-10-PCS處置碼如 0FT44ZZ"]',
-      "}",
-    ].join("\n");
-
-    let rawText = "";
-
     if (provider === "gemini") {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const systemMsg = messages.find((m) => m.role === "system")?.content || "";
+      const contents = messages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        }));
+      const body = {
+        contents,
+        generationConfig: expectJson ? { temperature: 0.2, responseMimeType: "application/json" } : { temperature: 0.3 },
+      };
+      if (systemMsg) {
+        body.systemInstruction = { parts: [{ text: systemMsg }] };
+      }
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n使用者查詢：${userQuery}` }] }],
-          generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const errBody = await res.text();
         throw new Error(`Gemini API 錯誤 (${res.status}): ${errBody.slice(0, 180)}`);
       }
       const data = await res.json();
-      rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    } else {
-      const endpoint =
-        provider === "openrouter"
-          ? "https://openrouter.ai/api/v1/chat/completions"
-          : `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
-      const headers = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      };
-      if (provider === "openrouter") {
-        headers["HTTP-Referer"] = window.location.origin;
-        headers["X-Title"] = "JianBaoSearch";
-      }
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          temperature: 0.2,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userQuery },
-          ],
-        }),
-      });
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(`API 錯誤 (${res.status}): ${errBody.slice(0, 180)}`);
-      }
-      const data = await res.json();
-      rawText = data.choices?.[0]?.message?.content || "";
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     }
+
+    const endpoint =
+      provider === "openrouter"
+        ? "https://openrouter.ai/api/v1/chat/completions"
+        : `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    };
+    if (provider === "openrouter") {
+      headers["HTTP-Referer"] = window.location.origin;
+      headers["X-Title"] = "JianBaoSearch";
+    }
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        temperature: expectJson ? 0.2 : 0.3,
+        messages,
+      }),
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`API 錯誤 (${res.status}): ${errBody.slice(0, 180)}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  }
+
+  async function callAiApi(userQuery) {
+    const systemPrompt = [
+      AI_FOCUSED_PERSONA,
+      "",
+      "請根據使用者的自然語言醫療描述，回傳嚴格的 JSON 格式（不要包含 markdown ```json 標記），結構如下：",
+      "{",
+      '  "clinicalSummary": "簡短繁體中文臨床判讀、編碼原則與客觀理賠要件摘要",',
+      '  "nhiKeywords": ["2到4個最適合搜尋台灣健保支付標準的中文關鍵字或醫令代碼"],',
+      '  "nhiCodes": ["若知道確切健保代碼可列於此"],',
+      '  "icdKeywords": ["2到4個最適合搜尋ICD診斷的中英文疾病關鍵字"],',
+      '  "icd10Codes": ["可能的ICD-10-CM代碼如 E11.9, K80.00"],',
+      '  "pcsKeywords": ["2到4個最適合搜尋ICD-10-PCS處置的中英文術式關鍵字"],',
+      '  "pcsCodes": ["可能的ICD-10-PCS處置碼如 0FT44ZZ"],',
+      '  "whyListed": {',
+      '    "nhi": "說明為何列出上述健保支付標準項目（包含對應的部章節如 2-2-7 手術或 2-2-6 處置意義）",',
+      '    "icd": "說明為何列出上述 ICD 診斷編碼（依據臨床事實與主次診斷編碼規則）",',
+      '    "pcs": "說明為何列出上述 ICD-10-PCS 處置編碼（術式部位、途徑與裝置判讀）"',
+      "  },",
+      '  "nextCriteriaAndProgression": [',
+      '    "要件1：疾病/診斷進一步確認或分期所需的客觀檢查/病理要件與可能臨床發展",',
+      '    "要件2：處置/手術申報與保險理賠認定要件（如 2-2-7 vs 2-2-6、住院天數、病歷記載重點，嚴守不為理賠扭曲診斷原則）",',
+      '    "要件3：後續追蹤、併發症或治療升級時可能對應的編碼/處置演進"',
+      "  ]",
+      "}",
+    ].join("\n");
+
+    const rawText = await callAiRequest(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userQuery },
+      ],
+      true
+    );
 
     const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("AI 回傳格式非預期 JSON，請重試。");
     return JSON.parse(jsonMatch[0]);
+  }
+
+  async function callAiFollowUp(entry, followUpQuestion) {
+    const contextSummary = [
+      `【原始查詢】${entry.query}`,
+      `【判讀摘要】${entry.clinicalSummary}`,
+      `【已列健保支付標準】${(entry.nhiHits || []).slice(0, 6).map((x) => `${x.c} ${x.zh}(${x.sec})`).join("；") || "無"}`,
+      `【已列ICD診斷】${(entry.cmHits || []).slice(0, 6).map((x) => `ICD10:${x.i10} ${x.zh10} / ICD9:${x.i9}`).join("；") || "無"}`,
+      `【已列ICD-10-PCS處置】${(entry.pcsHits || []).slice(0, 6).map((x) => `${x.pcs} ${x.zhPcs}`).join("；") || "無"}`,
+    ].join("\n");
+
+    const systemPrompt = [
+      AI_FOCUSED_PERSONA,
+      "",
+      "請以繁體中文簡潔、結構化回答使用者的後續追問。針對診斷碼正確性、健保部章節（如 2-2-7 vs 2-2-6）、保險理賠要件符合度、病歷應記載的客觀事實以及疾病/處置後續發展提供專業解答；切勿建議為了保險理賠而扭曲或偽造診斷。",
+      "",
+      "本次查詢上下文：",
+      contextSummary,
+    ].join("\n");
+
+    const messages = [{ role: "system", content: systemPrompt }];
+    const historyMsgs = Array.isArray(entry.followUps) ? entry.followUps : [];
+    for (const m of historyMsgs.slice(-10)) {
+      messages.push({ role: m.role, content: m.content });
+    }
+    messages.push({ role: "user", content: followUpQuestion });
+
+    return await callAiRequest(messages, false);
   }
 
   function matchLocalNhi(aiPlan) {
@@ -1857,6 +1920,9 @@
         provider,
         model,
         clinicalSummary: aiPlan.clinicalSummary || "",
+        whyListed: aiPlan.whyListed || {},
+        nextCriteriaAndProgression: aiPlan.nextCriteriaAndProgression || [],
+        followUps: [],
         nhiHits,
         cmHits,
         pcsHits,
@@ -1989,6 +2055,26 @@
           .join("")
       : `<p class="ai-empty-hint">未比對到直接符合的 ICD-10-PCS 處置編碼</p>`;
 
+    const why = entry.whyListed || {};
+    const prog = entry.nextCriteriaAndProgression;
+    const progHtml = Array.isArray(prog) && prog.length
+      ? `<ul class="ai-explain-list">${prog.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      : `<p>${escapeHtml(typeof prog === "string" && prog ? prog : "請視臨床檢查、病理報告及實際手術/處置紀錄，依客觀事實評估後續病程與申報歸屬。")}</p>`;
+
+    const followUps = Array.isArray(entry.followUps) ? entry.followUps : [];
+    const chatHtml = followUps.length
+      ? followUps
+          .map(
+            (m) => `
+          <div class="ai-chat-msg ${m.role === "user" ? "user" : "assistant"}">
+            <span class="ai-chat-role">${m.role === "user" ? "您的提問" : "AI 編碼與要件顧問"}</span>
+            ${escapeHtml(m.content)}
+          </div>
+        `
+          )
+          .join("")
+      : `<p class="ai-empty-hint">可於下方繼續追問：例如「此術式是否符合健保 2-2-7 手術？」、「病歷需具備哪些客觀佐證？」或「若後續併發感染如何編碼？」</p>`;
+
     el.aiResultsContent.innerHTML = `
       <div class="ai-summary-card">
         <div class="label-row" style="margin-bottom:8px">
@@ -2003,7 +2089,42 @@
       <div class="icd-grid">${cmHtml}</div>
       <div class="ai-group-title"><span>ICD-10-PCS 處置編碼候選</span><span class="ai-group-count">${entry.pcsHits.length} 筆</span></div>
       <div class="icd-grid">${pcsHtml}</div>
+
+      <section class="ai-explain-card" aria-label="AI 選碼說明與可能發展">
+        <h3>AI 編碼依據說明與後續要件／可能發展</h3>
+        <div class="ai-integrity-banner">判讀原則：嚴格依據臨床事實給予正確診斷與處置編碼，客觀檢視健保部章節及保險理賠要件，絕不為迎合理賠而扭曲診斷。</div>
+        <div class="ai-explain-grid">
+          <div class="ai-explain-block">
+            <h4>為何列出這些「健保支付標準」</h4>
+            <p>${escapeHtml(why.nhi || "依據臨床處置與檢查項目關鍵字比對現行健保給付項目，供核對部章節（如 2-2-7 手術或 2-2-6 治療處置）與支付點數。")}</p>
+          </div>
+          <div class="ai-explain-block">
+            <h4>為何列出這些「ICD 診斷編碼」</h4>
+            <p>${escapeHtml(why.icd || "依據真實臨床病況比對對應的 ICD-10-CM、ICD-9-CM 與 WHO ICD-11 診斷分類。")}</p>
+          </div>
+          <div class="ai-explain-block">
+            <h4>為何列出這些「ICD-10-PCS 處置編碼」</h4>
+            <p>${escapeHtml(why.pcs || "依據實際施作術式部位、手術途徑（開放/內視鏡/經皮）與處置目的比對對應的 PCS 處置編碼。")}</p>
+          </div>
+          <div class="ai-explain-block">
+            <h4>疾病、處置、診斷後續要件與可能發展</h4>
+            ${progHtml}
+          </div>
+        </div>
+      </section>
+
+      <section class="ai-chat-card" aria-label="繼續與 AI 對話">
+        <h3>繼續對話（深入確認診斷、處置要件與理賠規範）</h3>
+        <div class="ai-chat-messages" id="aiChatMessages">${chatHtml}</div>
+        <div class="ai-chat-form">
+          <input type="text" id="aiFollowUpInput" class="text-input" placeholder="針對本次結果繼續提問（例如：若屬門診處置而非住院手術，2-2-7 與病歷紀錄要注意什麼？）" autocomplete="off" />
+          <button type="button" id="aiFollowUpSendBtn" class="btn btn-primary" data-followup-id="${escapeHtml(entry.id)}">送出追問</button>
+        </div>
+      </section>
     `;
+
+    const chatBox = document.getElementById("aiChatMessages");
+    if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
   }
 
   function exportAllSettings() {
@@ -2194,7 +2315,54 @@
       }
     });
 
+    const handleFollowUpSubmit = async (entryId) => {
+      const entry = state.ai.history.find((h) => h.id === entryId);
+      const inputEl = document.getElementById("aiFollowUpInput");
+      const sendBtn = document.getElementById("aiFollowUpSendBtn");
+      if (!entry || !inputEl) return;
+
+      const q = inputEl.value.trim();
+      if (!q) {
+        showToast("請輸入追問內容");
+        return;
+      }
+
+      if (!Array.isArray(entry.followUps)) entry.followUps = [];
+      entry.followUps.push({ role: "user", content: q });
+      inputEl.value = "";
+      if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.textContent = "思考中...";
+      }
+      renderAiResult(entry);
+
+      const nextSendBtn = document.getElementById("aiFollowUpSendBtn");
+      const nextInputEl = document.getElementById("aiFollowUpInput");
+      if (nextSendBtn) {
+        nextSendBtn.disabled = true;
+        nextSendBtn.textContent = "思考中...";
+      }
+      if (nextInputEl) nextInputEl.disabled = true;
+
+      try {
+        const reply = await callAiFollowUp(entry, q);
+        entry.followUps.push({ role: "assistant", content: reply.trim() });
+        saveAiHistory();
+        renderAiResult(entry);
+      } catch (err) {
+        entry.followUps.push({ role: "assistant", content: `追問失敗：${err.message}` });
+        saveAiHistory();
+        renderAiResult(entry);
+      }
+    };
+
     el.aiResultsContent.addEventListener("click", (e) => {
+      const followBtn = e.target.closest("[data-followup-id]");
+      if (followBtn) {
+        e.stopPropagation();
+        handleFollowUpSubmit(followBtn.dataset.followupId);
+        return;
+      }
       const delCurrentBtn = e.target.closest("[data-del-current-hist]");
       if (delCurrentBtn) {
         e.stopPropagation();
@@ -2220,6 +2388,16 @@
       const nhiCard = e.target.closest("[data-ai-nhi]");
       if (nhiCard) {
         openDetail(nhiCard.dataset.aiNhi);
+      }
+    });
+
+    el.aiResultsContent.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target && e.target.id === "aiFollowUpInput") {
+        e.preventDefault();
+        const sendBtn = document.getElementById("aiFollowUpSendBtn");
+        if (sendBtn && sendBtn.dataset.followupId) {
+          handleFollowUpSubmit(sendBtn.dataset.followupId);
+        }
       }
     });
   }
