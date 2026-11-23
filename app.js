@@ -1991,7 +1991,10 @@
 
     el.aiResultsContent.innerHTML = `
       <div class="ai-summary-card">
-        <h3>AI 臨床與申報判讀摘要（${escapeHtml(entry.model)}）</h3>
+        <div class="label-row" style="margin-bottom:8px">
+          <h3 style="margin:0">AI 臨床與申報判讀摘要（${escapeHtml(entry.model)}）</h3>
+          <button type="button" class="btn btn-ghost btn-sm" data-del-current-hist="${escapeHtml(entry.id)}" style="color:var(--rose)">刪除此筆紀錄</button>
+        </div>
         <p>${escapeHtml(entry.clinicalSummary || entry.query)}</p>
       </div>
       <div class="ai-group-title"><span>健保支付標準候選</span><span class="ai-group-count">${entry.nhiHits.length} 筆</span></div>
@@ -2160,19 +2163,23 @@
       showToast("已清空 AI 查詢歷史");
     });
 
+    const deleteAiHistoryById = (id) => {
+      state.ai.history = state.ai.history.filter((h) => h.id !== id);
+      if (state.ai.activeHistoryId === id) {
+        state.ai.activeHistoryId = null;
+        el.aiResultsContent.classList.add("hidden");
+        el.aiEmptyState.classList.remove("hidden");
+      }
+      saveAiHistory();
+      renderAiHistory();
+      showToast("已刪除此筆 AI 查詢紀錄");
+    };
+
     el.aiHistoryList.addEventListener("click", (e) => {
       const delBtn = e.target.closest("[data-del-hist]");
       if (delBtn) {
         e.stopPropagation();
-        const id = delBtn.dataset.delHist;
-        state.ai.history = state.ai.history.filter((h) => h.id !== id);
-        if (state.ai.activeHistoryId === id) {
-          state.ai.activeHistoryId = null;
-          el.aiResultsContent.classList.add("hidden");
-          el.aiEmptyState.classList.remove("hidden");
-        }
-        saveAiHistory();
-        renderAiHistory();
+        deleteAiHistoryById(delBtn.dataset.delHist);
         return;
       }
       const itemEl = e.target.closest("[data-hist-id]");
@@ -2188,6 +2195,12 @@
     });
 
     el.aiResultsContent.addEventListener("click", (e) => {
+      const delCurrentBtn = e.target.closest("[data-del-current-hist]");
+      if (delCurrentBtn) {
+        e.stopPropagation();
+        deleteAiHistoryById(delCurrentBtn.dataset.delCurrentHist);
+        return;
+      }
       const copyBtn = e.target.closest("[data-copy-ai]");
       if (copyBtn) {
         e.stopPropagation();
@@ -2211,11 +2224,20 @@
     });
   }
 
+  function registerServiceWorker() {
+    if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
+      navigator.serviceWorker.register("sw.js").catch(() => {
+        // ignore SW registration failure in restricted contexts
+      });
+    }
+  }
+
   async function init() {
     loadPreferences();
     loadFavorites();
     loadAiState();
     bindEvents();
+    registerServiceWorker();
 
     try {
       const [metaRes, dataRes] = await Promise.all([
