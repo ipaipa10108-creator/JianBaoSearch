@@ -74,23 +74,14 @@
   </header>
 
   <nav class="mode-nav" aria-label="查詢系統切換">
-    <div class="container mode-nav-inner" role="tablist">
-      <button type="button" class="mode-tab active" role="tab" aria-selected="true" data-mode="nhi">
-        <span class="tab-badge">NHI</span>
-        <span>健保支付標準查詢</span>
-      </button>
-      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="icd-cm">
-        <span class="tab-badge">DX</span>
-        <span>ICD-9 / 10 / 11 診斷對照</span>
-      </button>
-      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="icd-pcs">
-        <span class="tab-badge">PCS</span>
-        <span>ICD-10-PCS 處置編碼</span>
-      </button>
-      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="ai">
-        <span class="tab-badge">AI</span>
-        <span>AI 智慧查詢與歷史</span>
-      </button>
+    <div class="container mode-nav-inner">
+      <label for="modeSelect" class="mode-select-label">查詢分類：</label>
+      <select id="modeSelect" class="select-input mode-select" aria-label="選擇查詢分類項目">
+        <option value="nhi">【NHI】健保支付標準查詢</option>
+        <option value="icd-cm">【DX】ICD-9 / 10 / 11 診斷對照</option>
+        <option value="icd-pcs">【PCS】ICD-10-PCS 處置編碼</option>
+        <option value="ai">【AI】AI 智慧查詢與歷史</option>
+      </select>
     </div>
   </nav>
 
@@ -352,26 +343,27 @@
     <div id="aiSearchView" class="view-panel hidden">
       <section class="search-panel" aria-label="AI 自然語言跨庫查詢">
         <div class="ai-search-row">
-          <div class="search-box-wrap" style="flex:1">
+          <div class="search-box-wrap ai-input-wrap">
             <label for="aiPromptInput" class="sr-only">輸入自然語言醫療描述</label>
-            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M16 14a4 4 0 0 1 4 4v2H4v-2a4 4 0 0 1 4-4"/>
-            </svg>
             <input
               type="search"
               id="aiPromptInput"
-              class="search-input"
-              placeholder="輸入自然語言描述，例如：急性膽囊炎做腹腔鏡膽囊切除術、糖尿病併視網膜病變追蹤..."
+              class="search-input ai-prompt-input"
+              placeholder="輸入自然語言描述，例如：急性膽囊炎做腹腔鏡膽囊切除術..."
               autocomplete="off"
             />
           </div>
-          <button type="button" id="aiRunBtn" class="btn btn-primary">AI 智慧查詢</button>
-          <button type="button" id="aiOpenSettingsBtn" class="btn btn-secondary">AI 模型設定</button>
+          <button type="button" id="aiRunBtn" class="btn btn-primary ai-search-icon-btn" title="AI 智慧查詢" aria-label="AI 智慧查詢">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </button>
         </div>
         <div class="filters-row" style="margin-top:10px;padding-top:10px">
-          <div class="filter-group">
+          <div class="filter-group model-switch-wrap">
             <span class="filter-label">目前模型：</span>
-            <span class="tier-pill" id="aiCurrentModelBadge">尚未設定</span>
+            <button type="button" class="tier-pill model-switch-pill" id="aiCurrentModelBadge" title="點擊快速切換最近使用過的模型" aria-haspopup="listbox" aria-expanded="false">尚未設定</button>
+            <div class="model-popover hidden" id="aiRecentModelsMenu" role="listbox" aria-label="最近使用過的模型"></div>
           </div>
           <div class="filter-group">
             <span class="filter-label">範例：</span>

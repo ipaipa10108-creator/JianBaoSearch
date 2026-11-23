@@ -53,6 +53,7 @@
       searching: false,
       config: {
         activeProvider: "gemini",
+        recentModels: [],
         providers: {
           gemini: { apiKey: "", model: "gemini-2.5-flash" },
           openrouter: { apiKey: "", model: "google/gemini-2.0-flash-exp:free" },
@@ -73,7 +74,7 @@
 
   // DOM elements
   const el = {
-    modeTabs: document.querySelectorAll(".mode-tab"),
+    modeSelect: document.getElementById("modeSelect"),
     nhiView: document.getElementById("nhiView"),
     icdCmView: document.getElementById("icdCmView"),
     icdPcsView: document.getElementById("icdPcsView"),
@@ -101,8 +102,8 @@
     aiQuickConfigBtn: document.getElementById("aiQuickConfigBtn"),
     aiPromptInput: document.getElementById("aiPromptInput"),
     aiRunBtn: document.getElementById("aiRunBtn"),
-    aiOpenSettingsBtn: document.getElementById("aiOpenSettingsBtn"),
     aiCurrentModelBadge: document.getElementById("aiCurrentModelBadge"),
+    aiRecentModelsMenu: document.getElementById("aiRecentModelsMenu"),
     aiHistoryList: document.getElementById("aiHistoryList"),
     aiClearHistoryBtn: document.getElementById("aiClearHistoryBtn"),
     aiLoadingState: document.getElementById("aiLoadingState"),
@@ -1063,11 +1064,9 @@
 
   function switchMode(mode) {
     state.mode = mode;
-    el.modeTabs.forEach((btn) => {
-      const active = btn.dataset.mode === mode;
-      btn.classList.toggle("active", active);
-      btn.setAttribute("aria-selected", String(active));
-    });
+    if (el.modeSelect && el.modeSelect.value !== mode) {
+      el.modeSelect.value = mode;
+    }
     el.nhiView.classList.toggle("hidden", mode !== "nhi");
     el.icdCmView.classList.toggle("hidden", mode !== "icd-cm");
     el.icdPcsView.classList.toggle("hidden", mode !== "icd-pcs");
@@ -1364,8 +1363,8 @@
   }
 
   function bindIcdEvents() {
-    el.modeTabs.forEach((btn) => {
-      btn.addEventListener("click", () => switchMode(btn.dataset.mode));
+    el.modeSelect.addEventListener("change", () => {
+      switchMode(el.modeSelect.value);
     });
 
     // ICD-CM events
@@ -1514,6 +1513,44 @@
     el.aiHistoryCountBadge.textContent = String(state.ai.history.length);
   }
 
+  function recordRecentModel(provider, model) {
+    if (!provider || !model) return;
+    if (!Array.isArray(state.ai.config.recentModels)) state.ai.config.recentModels = [];
+    const list = state.ai.config.recentModels.filter((x) => !(x.provider === provider && x.model === model));
+    list.unshift({ provider, model });
+    state.ai.config.recentModels = list.slice(0, 10);
+  }
+
+  function renderRecentModelsMenu() {
+    if (!el.aiRecentModelsMenu) return;
+    const providerLabels = { gemini: "Gemini", openrouter: "OpenRouter", openai: "OpenAI", custom: "Custom" };
+    const active = getActiveAiProviderCfg();
+    const list = Array.isArray(state.ai.config.recentModels) ? [...state.ai.config.recentModels] : [];
+
+    // Ensure any configured provider+model is also available to switch
+    for (const p of ["gemini", "openrouter", "openai", "custom"]) {
+      const cfg = state.ai.config.providers[p];
+      if (cfg && cfg.apiKey && cfg.model && !list.some((x) => x.provider === p && x.model === cfg.model)) {
+        list.push({ provider: p, model: cfg.model });
+      }
+    }
+
+    if (!list.length) {
+      el.aiRecentModelsMenu.innerHTML = `<div class="model-popover-hint">尚無最近使用模型，請點擊上方齒輪 ⚙ 設定 API Key 與模型。</div>`;
+      return;
+    }
+
+    el.aiRecentModelsMenu.innerHTML =
+      list
+        .map((item) => {
+          const isCurrent = item.provider === active.provider && item.model === active.model;
+          const pName = providerLabels[item.provider] || item.provider;
+          return `<button type="button" class="model-popover-item ${isCurrent ? "active" : ""}" role="option" aria-selected="${isCurrent}" data-quick-provider="${escapeHtml(item.provider)}" data-quick-model="${escapeHtml(item.model)}">${escapeHtml(pName)} · ${escapeHtml(item.model)}</button>`;
+        })
+        .join("") +
+      `<div class="model-popover-hint">如需修改 API Key 或搜尋其他模型，請點擊上方齒輪 ⚙</div>`;
+  }
+
   function loadAiState() {
     try {
       const rawCfg = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
@@ -1521,6 +1558,7 @@
         const parsed = JSON.parse(rawCfg);
         if (parsed && parsed.providers) {
           state.ai.config.activeProvider = parsed.activeProvider || "gemini";
+          state.ai.config.recentModels = Array.isArray(parsed.recentModels) ? parsed.recentModels : [];
           for (const key of ["gemini", "openrouter", "openai", "custom"]) {
             if (parsed.providers[key]) {
               state.ai.config.providers[key] = {
@@ -1538,6 +1576,10 @@
       }
     } catch {
       // ignore corrupted storage
+    }
+    const active = getActiveAiProviderCfg();
+    if (active.apiKey && active.model) {
+      recordRecentModel(active.provider, active.model);
     }
     updateAiStatusBadges();
     renderAiHistory();
@@ -2193,7 +2235,45 @@
     };
     el.settingsModalBtn.addEventListener("click", openSettings);
     el.aiQuickConfigBtn.addEventListener("click", openSettings);
-    el.aiOpenSettingsBtn.addEventListener("click", openSettings);
+
+    // Quick-switch recent models when tapping the current model badge
+    const closeModelPopover = () => {
+      if (!el.aiRecentModelsMenu) return;
+      el.aiRecentModelsMenu.classList.add("hidden");
+      el.aiCurrentModelBadge.setAttribute("aria-expanded", "false");
+    };
+
+    el.aiCurrentModelBadge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = el.aiRecentModelsMenu.classList.contains("hidden");
+      if (willOpen) {
+        renderRecentModelsMenu();
+        el.aiRecentModelsMenu.classList.remove("hidden");
+        el.aiCurrentModelBadge.setAttribute("aria-expanded", "true");
+      } else {
+        closeModelPopover();
+      }
+    });
+
+    el.aiRecentModelsMenu.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-quick-provider]");
+      if (!btn) return;
+      const p = btn.dataset.quickProvider;
+      const m = btn.dataset.quickModel;
+      state.ai.config.activeProvider = p;
+      if (!state.ai.config.providers[p]) state.ai.config.providers[p] = { apiKey: "", model: m, baseUrl: "" };
+      state.ai.config.providers[p].model = m;
+      recordRecentModel(p, m);
+      saveAiConfig();
+      closeModelPopover();
+      showToast(`已切換模型：${m}`);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!el.aiRecentModelsMenu.classList.contains("hidden") && !e.target.closest(".model-switch-wrap")) {
+        closeModelPopover();
+      }
+    });
 
     el.closeSettingsBtn.addEventListener("click", () => el.settingsModal.classList.add("hidden"));
     el.settingsModal.addEventListener("click", (e) => {
@@ -2224,6 +2304,7 @@
 
       state.ai.config.activeProvider = p;
       state.ai.config.providers[p] = { apiKey: key, model, baseUrl };
+      if (model) recordRecentModel(p, model);
       saveAiConfig();
       el.settingsModal.classList.add("hidden");
       showToast(`已儲存 ${p} 設定 (${model || "無模型"})`);
