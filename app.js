@@ -5,6 +5,8 @@
   const FAV_STORAGE_KEY = "jianbaosearch_favorites_v1";
   const THEME_STORAGE_KEY = "jianbaosearch_theme_v1";
   const FONT_STORAGE_KEY = "jianbaosearch_font_size_v1";
+  const AI_CONFIG_STORAGE_KEY = "jianbaosearch_ai_config_v1";
+  const AI_HISTORY_STORAGE_KEY = "jianbaosearch_ai_history_v1";
   const DEFAULT_FONT_SIZE = 15;
   const MIN_FONT_SIZE = 13;
   const MAX_FONT_SIZE = 22;
@@ -46,6 +48,27 @@
       onlyNhi: "all",
       page: 1,
     },
+    ai: {
+      enabled: false,
+      searching: false,
+      config: {
+        activeProvider: "gemini",
+        providers: {
+          gemini: { apiKey: "", model: "gemini-2.5-flash" },
+          openrouter: { apiKey: "", model: "google/gemini-2.0-flash-exp:free" },
+          openai: { apiKey: "", model: "gpt-4o-mini" },
+          custom: { apiKey: "", model: "", baseUrl: "" },
+        },
+      },
+      history: [],
+      activeHistoryId: null,
+      cachedModels: {
+        gemini: [],
+        openrouter: [],
+        openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"],
+        custom: [],
+      },
+    },
   };
 
   // DOM elements
@@ -54,6 +77,38 @@
     nhiView: document.getElementById("nhiView"),
     icdCmView: document.getElementById("icdCmView"),
     icdPcsView: document.getElementById("icdPcsView"),
+    aiSearchView: document.getElementById("aiSearchView"),
+    aiHistoryHeaderBtn: document.getElementById("aiHistoryHeaderBtn"),
+    aiHistoryCountBadge: document.getElementById("aiHistoryCountBadge"),
+    settingsModalBtn: document.getElementById("settingsModalBtn"),
+    settingsModal: document.getElementById("settingsModal"),
+    closeSettingsBtn: document.getElementById("closeSettingsBtn"),
+    aiProviderSelect: document.getElementById("aiProviderSelect"),
+    aiBaseUrlField: document.getElementById("aiBaseUrlField"),
+    aiBaseUrlInput: document.getElementById("aiBaseUrlInput"),
+    aiApiKeyInput: document.getElementById("aiApiKeyInput"),
+    toggleApiKeyVisBtn: document.getElementById("toggleApiKeyVisBtn"),
+    fetchFreeModelsBtn: document.getElementById("fetchFreeModelsBtn"),
+    aiModelSelect: document.getElementById("aiModelSelect"),
+    aiCustomModelInput: document.getElementById("aiCustomModelInput"),
+    aiModelFetchStatus: document.getElementById("aiModelFetchStatus"),
+    saveAiSettingsBtn: document.getElementById("saveAiSettingsBtn"),
+    exportSettingsBtn: document.getElementById("exportSettingsBtn"),
+    importSettingsInput: document.getElementById("importSettingsInput"),
+    aiSearchCheckbox: document.getElementById("aiSearchCheckbox"),
+    aiActiveModelHint: document.getElementById("aiActiveModelHint"),
+    aiSearchSubmitBtn: document.getElementById("aiSearchSubmitBtn"),
+    aiQuickConfigBtn: document.getElementById("aiQuickConfigBtn"),
+    aiPromptInput: document.getElementById("aiPromptInput"),
+    aiRunBtn: document.getElementById("aiRunBtn"),
+    aiOpenSettingsBtn: document.getElementById("aiOpenSettingsBtn"),
+    aiCurrentModelBadge: document.getElementById("aiCurrentModelBadge"),
+    aiHistoryList: document.getElementById("aiHistoryList"),
+    aiClearHistoryBtn: document.getElementById("aiClearHistoryBtn"),
+    aiLoadingState: document.getElementById("aiLoadingState"),
+    aiLoadingText: document.getElementById("aiLoadingText"),
+    aiEmptyState: document.getElementById("aiEmptyState"),
+    aiResultsContent: document.getElementById("aiResultsContent"),
     icdCmInput: document.getElementById("icdCmInput"),
     icdCmClearBtn: document.getElementById("icdCmClearBtn"),
     icdCmExamples: document.getElementById("icdCmExamples"),
@@ -963,7 +1018,13 @@
       if (e.key === "Escape") {
         if (!el.detailModal.classList.contains("hidden")) closeDetail();
         if (!el.infoModal.classList.contains("hidden")) el.infoModal.classList.add("hidden");
-      } else if (e.key === "/" && document.activeElement !== el.searchInput && el.detailModal.classList.contains("hidden")) {
+        if (!el.settingsModal.classList.contains("hidden")) el.settingsModal.classList.add("hidden");
+      } else if (
+        e.key === "/" &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "") &&
+        el.detailModal.classList.contains("hidden") &&
+        el.settingsModal.classList.contains("hidden")
+      ) {
         e.preventDefault();
         el.searchInput.focus();
       }
@@ -1010,11 +1071,14 @@
     el.nhiView.classList.toggle("hidden", mode !== "nhi");
     el.icdCmView.classList.toggle("hidden", mode !== "icd-cm");
     el.icdPcsView.classList.toggle("hidden", mode !== "icd-pcs");
+    el.aiSearchView.classList.toggle("hidden", mode !== "ai");
 
     if (mode === "icd-cm" && !state.icdCm.loaded && !state.icdCm.loading) {
       loadIcdCm();
     } else if (mode === "icd-pcs" && !state.icdPcs.loaded && !state.icdPcs.loading) {
       loadIcdPcs();
+    } else if (mode === "ai") {
+      renderAiHistory();
     }
   }
 
@@ -1412,11 +1476,745 @@
       renderIcdPcs();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
+
+    bindAiAndSettingsEvents();
+  }
+
+  // ==================== AI Settings, Free Models & Import/Export ====================
+  const DEFAULT_MODELS = {
+    gemini: ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"],
+    openrouter: [
+      "google/gemini-2.0-flash-exp:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "qwen/qwen-2.5-72b-instruct:free",
+      "deepseek/deepseek-chat-v3-0324:free",
+    ],
+    openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"],
+    custom: [],
+  };
+
+  function getActiveAiProviderCfg() {
+    const p = state.ai.config.activeProvider || "gemini";
+    return {
+      provider: p,
+      ...(state.ai.config.providers[p] || { apiKey: "", model: "", baseUrl: "" }),
+    };
+  }
+
+  function updateAiStatusBadges() {
+    const { provider, apiKey, model } = getActiveAiProviderCfg();
+    const providerLabels = { gemini: "Gemini", openrouter: "OpenRouter", openai: "OpenAI", custom: "Custom" };
+    const pName = providerLabels[provider] || provider;
+    const configured = Boolean(apiKey && model);
+
+    el.aiCurrentModelBadge.textContent = configured ? `${pName} · ${model}` : `${pName}（未設定 API Key）`;
+    el.aiActiveModelHint.textContent = configured
+      ? `（目前：${pName} / ${model} — 按 Enter 或點「送出 AI 查詢」）`
+      : "（請先於右上角⚙設定 API Key）";
+    el.aiHistoryCountBadge.textContent = String(state.ai.history.length);
+  }
+
+  function loadAiState() {
+    try {
+      const rawCfg = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
+      if (rawCfg) {
+        const parsed = JSON.parse(rawCfg);
+        if (parsed && parsed.providers) {
+          state.ai.config.activeProvider = parsed.activeProvider || "gemini";
+          for (const key of ["gemini", "openrouter", "openai", "custom"]) {
+            if (parsed.providers[key]) {
+              state.ai.config.providers[key] = {
+                ...state.ai.config.providers[key],
+                ...parsed.providers[key],
+              };
+            }
+          }
+        }
+      }
+      const rawHist = localStorage.getItem(AI_HISTORY_STORAGE_KEY);
+      if (rawHist) {
+        const arr = JSON.parse(rawHist);
+        if (Array.isArray(arr)) state.ai.history = arr;
+      }
+    } catch {
+      // ignore corrupted storage
+    }
+    updateAiStatusBadges();
+    renderAiHistory();
+  }
+
+  function saveAiConfig() {
+    try {
+      localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(state.ai.config));
+    } catch {}
+    updateAiStatusBadges();
+  }
+
+  function saveAiHistory() {
+    try {
+      localStorage.setItem(AI_HISTORY_STORAGE_KEY, JSON.stringify(state.ai.history.slice(0, 50)));
+    } catch {}
+    updateAiStatusBadges();
+  }
+
+  function populateSettingsForm(provider) {
+    const p = provider || state.ai.config.activeProvider || "gemini";
+    const cfg = state.ai.config.providers[p] || { apiKey: "", model: "", baseUrl: "" };
+
+    el.aiProviderSelect.value = p;
+    el.aiApiKeyInput.value = cfg.apiKey || "";
+    el.aiBaseUrlField.style.display = p === "custom" || p === "openai" ? "block" : "none";
+    el.aiBaseUrlInput.value = cfg.baseUrl || (p === "openai" ? "https://api.openai.com/v1" : "");
+
+    const showFetchBtn = p === "gemini" || p === "openrouter" || p === "openai" || p === "custom";
+    el.fetchFreeModelsBtn.style.display = showFetchBtn ? "inline-flex" : "none";
+    el.fetchFreeModelsBtn.textContent = p === "gemini" || p === "openrouter" ? "自動搜尋 Free Model" : "拉取模型清單";
+
+    const cached = state.ai.cachedModels[p] && state.ai.cachedModels[p].length ? state.ai.cachedModels[p] : DEFAULT_MODELS[p] || [];
+    const options = [...cached];
+    if (cfg.model && !options.includes(cfg.model)) options.unshift(cfg.model);
+
+    el.aiModelSelect.innerHTML = options.length
+      ? options.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("")
+      : `<option value="">請手動輸入或點擊搜尋模型</option>`;
+    if (cfg.model) el.aiModelSelect.value = cfg.model;
+    el.aiCustomModelInput.value = cfg.model || "";
+    el.aiModelFetchStatus.textContent = "";
+  }
+
+  async function fetchFreeModels() {
+    const p = el.aiProviderSelect.value;
+    const key = el.aiApiKeyInput.value.trim();
+    el.fetchFreeModelsBtn.disabled = true;
+    el.aiModelFetchStatus.textContent = "正在搜尋可用模型清單...";
+
+    try {
+      let models = [];
+      if (p === "openrouter") {
+        const res = await fetch("https://openrouter.ai/api/v1/models");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        models = (data.data || [])
+          .filter((m) => {
+            const pr = m.pricing || {};
+            return m.id.endsWith(":free") || (String(pr.prompt) === "0" && String(pr.completion) === "0");
+          })
+          .map((m) => m.id)
+          .sort();
+        el.aiModelFetchStatus.textContent = `已找到 ${models.length} 個 OpenRouter 免費模型！`;
+      } else if (p === "gemini") {
+        if (!key) throw new Error("Gemini 需先填入 API Key 才能查詢可用模型清單");
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        models = (data.models || [])
+          .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+          .map((m) => m.name.replace(/^models\//, ""))
+          .filter((id) => /flash|pro|gemma/i.test(id))
+          .sort((a, b) => (a.includes("flash") === b.includes("flash") ? a.localeCompare(b) : a.includes("flash") ? -1 : 1));
+        el.aiModelFetchStatus.textContent = `已找到 ${models.length} 個 Gemini 可用模型（含免費額度 Flash 系列）！`;
+      } else {
+        if (!key) throw new Error("需先填入 API Key 才能拉取模型清單");
+        const base = (el.aiBaseUrlInput.value.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
+        const res = await fetch(`${base}/models`, {
+          headers: { Authorization: `Bearer ${key}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        models = (data.data || []).map((m) => m.id).sort();
+        el.aiModelFetchStatus.textContent = `已找到 ${models.length} 個可用模型！`;
+      }
+
+      if (models.length) {
+        state.ai.cachedModels[p] = models;
+        el.aiModelSelect.innerHTML = models.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+        el.aiCustomModelInput.value = models[0];
+      }
+    } catch (err) {
+      el.aiModelFetchStatus.textContent = `搜尋失敗：${err.message}`;
+    } finally {
+      el.fetchFreeModelsBtn.disabled = false;
+    }
+  }
+
+  async function callAiApi(userQuery) {
+    const { provider, apiKey, model, baseUrl } = getActiveAiProviderCfg();
+    if (!apiKey) throw new Error("尚未設定 API Key，請點擊右上角齒輪圖示進行設定。");
+    if (!model) throw new Error("尚未選擇 AI 模型，請先至設定視窗選擇模型。");
+
+    const systemPrompt = [
+      "你是台灣健保申報與國際疾病分類(ICD-9-CM, ICD-10-CM, ICD-11, ICD-10-PCS)專家。",
+      "請根據使用者的自然語言醫療描述，回傳嚴格的 JSON 格式（不要包含 markdown ```json 標記），結構如下：",
+      "{",
+      '  "clinicalSummary": "簡短繁體中文臨床與申報判讀摘要",',
+      '  "nhiKeywords": ["2到4個最適合搜尋台灣健保支付標準的中文關鍵字或醫令代碼"],',
+      '  "nhiCodes": ["若知道確切健保代碼可列於此"],',
+      '  "icdKeywords": ["2到4個最適合搜尋ICD診斷的中英文疾病關鍵字"],',
+      '  "icd10Codes": ["可能的ICD-10-CM代碼如 E11.9, K80.00"],',
+      '  "pcsKeywords": ["2到4個最適合搜尋ICD-10-PCS處置的中英文術式關鍵字"],',
+      '  "pcsCodes": ["可能的ICD-10-PCS處置碼如 0FT44ZZ"]',
+      "}",
+    ].join("\n");
+
+    let rawText = "";
+
+    if (provider === "gemini") {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n使用者查詢：${userQuery}` }] }],
+          generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+        }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Gemini API 錯誤 (${res.status}): ${errBody.slice(0, 180)}`);
+      }
+      const data = await res.json();
+      rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    } else {
+      const endpoint =
+        provider === "openrouter"
+          ? "https://openrouter.ai/api/v1/chat/completions"
+          : `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      };
+      if (provider === "openrouter") {
+        headers["HTTP-Referer"] = window.location.origin;
+        headers["X-Title"] = "JianBaoSearch";
+      }
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userQuery },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`API 錯誤 (${res.status}): ${errBody.slice(0, 180)}`);
+      }
+      const data = await res.json();
+      rawText = data.choices?.[0]?.message?.content || "";
+    }
+
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("AI 回傳格式非預期 JSON，請重試。");
+    return JSON.parse(jsonMatch[0]);
+  }
+
+  function matchLocalNhi(aiPlan) {
+    const codes = new Set((aiPlan.nhiCodes || []).map((c) => String(c).trim().toUpperCase()));
+    const kws = (aiPlan.nhiKeywords || []).map((k) => String(k).trim().toLowerCase()).filter(Boolean);
+    const scored = [];
+
+    for (let i = 0; i < state.allItems.length; i++) {
+      const it = state.allItems[i];
+      let score = 0;
+      if (codes.has(it.c.toUpperCase())) score += 100;
+      for (const kw of kws) {
+        const parts = kw.split(/\s+/).filter(Boolean);
+        if (parts.length && parts.every((p) => it._search.includes(p))) {
+          score += it.zh.toLowerCase().includes(kw) ? 20 : 10;
+        }
+      }
+      if (score > 0 && isItemActive(it)) score += 2;
+      if (score > 0) scored.push({ item: it, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 12).map((s) => ({
+      c: s.item.c,
+      zh: s.item.zh,
+      en: s.item.en,
+      p: s.item.p,
+      sec: s.item._section.label,
+    }));
+  }
+
+  function matchLocalIcdCm(aiPlan) {
+    const codes = new Set((aiPlan.icd10Codes || []).map((c) => String(c).trim().toUpperCase()));
+    const kws = (aiPlan.icdKeywords || []).map((k) => String(k).trim().toLowerCase()).filter(Boolean);
+    const { rows, i9, i11 } = state.icdCm;
+    const scored = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      let score = 0;
+      const c10 = (r[1] || "").toUpperCase();
+      if (codes.has(c10)) score += 100;
+      else if ([...codes].some((c) => c10.startsWith(c))) score += 40;
+
+      for (const kw of kws) {
+        const parts = kw.split(/\s+/).filter(Boolean);
+        if (parts.length && parts.every((p) => r._search.includes(p))) {
+          score += (r[2] || "").toLowerCase().includes(kw) ? 20 : 10;
+        }
+      }
+      if (score > 0 && r[4] && r[4].length) score += 3;
+      if (score > 0) scored.push({ r, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 12).map(({ r }) => {
+      const d9 = i9[r[0]] || ["", ""];
+      const c11s = r[4] || [];
+      return {
+        i9: r[0],
+        zh9: d9[0],
+        en9: d9[1],
+        i10: r[1],
+        zh10: r[2],
+        en10: r[3],
+        i11: c11s.map((c) => ({ code: c, title: i11[c] || "" })),
+      };
+    });
+  }
+
+  function matchLocalIcdPcs(aiPlan) {
+    const codes = new Set((aiPlan.pcsCodes || []).map((c) => String(c).trim().toUpperCase()));
+    const kws = (aiPlan.pcsKeywords || []).map((k) => String(k).trim().toLowerCase()).filter(Boolean);
+    const { rows, i9 } = state.icdPcs;
+    const scored = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      let score = 0;
+      const pcs = (r[1] || "").toUpperCase();
+      if (codes.has(pcs)) score += 100;
+      else if ([...codes].some((c) => pcs.startsWith(c.slice(0, 4)))) score += 35;
+
+      for (const kw of kws) {
+        const parts = kw.split(/\s+/).filter(Boolean);
+        if (parts.length && parts.every((p) => r._search.includes(p))) {
+          score += (r[2] || "").toLowerCase().includes(kw) ? 20 : 10;
+        }
+      }
+      if (score > 0 && r[4] && r[4].length) score += 5;
+      if (score > 0) scored.push({ r, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 12).map(({ r }) => {
+      const d9 = i9[r[0]] || ["", ""];
+      return {
+        i9: r[0],
+        zh9: d9[0],
+        en9: d9[1],
+        pcs: r[1],
+        zhPcs: r[2],
+        enPcs: r[3],
+        nhi: r[4] || [],
+      };
+    });
+  }
+
+  async function runAiSearch(queryText) {
+    const q = (queryText || "").trim();
+    if (!q) {
+      showToast("請輸入查詢內容");
+      return;
+    }
+    const { apiKey, model, provider } = getActiveAiProviderCfg();
+    if (!apiKey || !model) {
+      showToast("請先設定 AI API Key 與模型");
+      populateSettingsForm();
+      el.settingsModal.classList.remove("hidden");
+      return;
+    }
+
+    switchMode("ai");
+    el.aiPromptInput.value = q;
+    el.aiEmptyState.classList.add("hidden");
+    el.aiResultsContent.classList.add("hidden");
+    el.aiLoadingState.classList.remove("hidden");
+    el.aiRunBtn.disabled = true;
+
+    try {
+      el.aiLoadingText.textContent = "步驟 1/2：AI 正在解析自然語言與醫療代碼...";
+      const [aiPlan] = await Promise.all([
+        callAiApi(q),
+        state.icdCm.loaded ? Promise.resolve() : loadIcdCm(),
+        state.icdPcs.loaded ? Promise.resolve() : loadIcdPcs(),
+      ]);
+
+      el.aiLoadingText.textContent = "步驟 2/2：正在比對健保支付標準與 ICD 資料庫...";
+      const nhiHits = matchLocalNhi(aiPlan);
+      const cmHits = matchLocalIcdCm(aiPlan);
+      const pcsHits = matchLocalIcdPcs(aiPlan);
+
+      const entry = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        query: q,
+        timestamp: new Date().toLocaleString("zh-TW", { hour12: false }),
+        provider,
+        model,
+        clinicalSummary: aiPlan.clinicalSummary || "",
+        nhiHits,
+        cmHits,
+        pcsHits,
+      };
+
+      state.ai.history.unshift(entry);
+      if (state.ai.history.length > 50) state.ai.history.pop();
+      state.ai.activeHistoryId = entry.id;
+      saveAiHistory();
+      renderAiHistory();
+      renderAiResult(entry);
+    } catch (err) {
+      el.aiEmptyState.classList.remove("hidden");
+      el.aiEmptyState.innerHTML = `<h2 style="color:var(--rose)">AI 查詢失敗</h2><p>${escapeHtml(err.message)}</p>`;
+    } finally {
+      el.aiLoadingState.classList.add("hidden");
+      el.aiRunBtn.disabled = false;
+    }
+  }
+
+  function renderAiHistory() {
+    const list = state.ai.history;
+    if (!list.length) {
+      el.aiHistoryList.innerHTML = `<p class="ai-empty-hint">尚無 AI 查詢紀錄</p>`;
+      return;
+    }
+    el.aiHistoryList.innerHTML = list
+      .map(
+        (h) => `
+      <div class="ai-history-item ${h.id === state.ai.activeHistoryId ? "active" : ""}" data-hist-id="${escapeHtml(h.id)}">
+        <button type="button" class="ai-history-del" data-del-hist="${escapeHtml(h.id)}" title="刪除此筆紀錄" aria-label="刪除">✕</button>
+        <div class="ai-history-query">${escapeHtml(h.query)}</div>
+        <div class="ai-history-meta">${escapeHtml(h.timestamp)} · 健保${h.nhiHits.length} / 診斷${h.cmHits.length} / 處置${h.pcsHits.length}</div>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  function renderAiResult(entry) {
+    if (!entry) return;
+    el.aiEmptyState.classList.add("hidden");
+    el.aiLoadingState.classList.add("hidden");
+    el.aiResultsContent.classList.remove("hidden");
+
+    const nhiHtml = entry.nhiHits.length
+      ? entry.nhiHits
+          .map(
+            (it) => `
+          <article class="item-card" data-ai-nhi="${escapeHtml(it.c)}">
+            <div class="card-top">
+              <div class="card-top-left">
+                <span class="code-badge">${escapeHtml(it.c)}</span>
+                <button type="button" class="icd-code-btn" data-copy-ai="${escapeHtml(it.c)}">複製</button>
+              </div>
+              <div><span class="points-val">${formatPoints(it.p)}</span><span class="points-unit">點</span></div>
+            </div>
+            <div class="card-zh">${escapeHtml(it.zh)}</div>
+            ${it.en ? `<div class="card-en">${escapeHtml(it.en)}</div>` : ""}
+            <div class="card-section-row"><span class="section-tag">${escapeHtml(it.sec)}</span></div>
+          </article>
+        `
+          )
+          .join("")
+      : `<p class="ai-empty-hint">未比對到直接符合的健保支付標準項目</p>`;
+
+    const cmHtml = entry.cmHits.length
+      ? entry.cmHits
+          .map(
+            (r) => `
+          <article class="icd-card">
+            <div class="icd-cols">
+              <div class="icd-col">
+                <div class="icd-col-header"><span class="icd-ver-label">ICD-9-CM</span><button type="button" class="icd-code-btn icd9" data-copy-ai="${escapeHtml(r.i9)}">${escapeHtml(r.i9)}</button></div>
+                <div class="icd-zh">${escapeHtml(r.zh9 || "(無中文)")}</div>
+                <div class="icd-en">${escapeHtml(r.en9 || "")}</div>
+              </div>
+              <div class="icd-col">
+                <div class="icd-col-header"><span class="icd-ver-label">ICD-10-CM</span><button type="button" class="icd-code-btn icd10" data-copy-ai="${escapeHtml(r.i10)}">${escapeHtml(r.i10)}</button></div>
+                <div class="icd-zh">${escapeHtml(r.zh10 || "(無中文)")}</div>
+                <div class="icd-en">${escapeHtml(r.en10 || "")}</div>
+              </div>
+              <div class="icd-col">
+                <div class="icd-col-header"><span class="icd-ver-label">ICD-11 (WHO)</span></div>
+                ${
+                  r.i11 && r.i11.length
+                    ? r.i11
+                        .map(
+                          (x) =>
+                            `<div class="icd-11-item"><div><button type="button" class="icd-code-btn icd11" data-copy-ai="${escapeHtml(x.code)}">${escapeHtml(x.code)}</button></div><div class="icd-en">${escapeHtml(x.title)}</div></div>`
+                        )
+                        .join("")
+                    : `<div class="icd-en">尚無直接 ICD-11 對照</div>`
+                }
+              </div>
+            </div>
+          </article>
+        `
+          )
+          .join("")
+      : `<p class="ai-empty-hint">未比對到直接符合的 ICD 診斷編碼</p>`;
+
+    const pcsHtml = entry.pcsHits.length
+      ? entry.pcsHits
+          .map(
+            (r) => `
+          <article class="icd-card">
+            <div class="icd-cols icd-cols-2">
+              <div class="icd-col">
+                <div class="icd-col-header"><span class="icd-ver-label">ICD-10-PCS</span><button type="button" class="icd-code-btn icd10" data-copy-ai="${escapeHtml(r.pcs)}">${escapeHtml(r.pcs)}</button></div>
+                <div class="icd-zh">${escapeHtml(r.zhPcs || "(無中文)")}</div>
+                <div class="icd-en">${escapeHtml(r.enPcs || "")}</div>
+              </div>
+              <div class="icd-col">
+                <div class="icd-col-header"><span class="icd-ver-label">ICD-9 處置</span><button type="button" class="icd-code-btn icd9" data-copy-ai="${escapeHtml(r.i9)}">${escapeHtml(r.i9)}</button></div>
+                <div class="icd-zh">${escapeHtml(r.zh9 || "(無中文)")}</div>
+                <div class="icd-en">${escapeHtml(r.en9 || "")}</div>
+              </div>
+            </div>
+            ${
+              r.nhi && r.nhi.length
+                ? `<div class="nhi-link-list"><span>對應健保醫令：</span>${r.nhi
+                    .map((c) => `<button type="button" class="nhi-jump-btn" data-jump-nhi="${escapeHtml(c)}">${escapeHtml(c)}</button>`)
+                    .join("")}</div>`
+                : ""
+            }
+          </article>
+        `
+          )
+          .join("")
+      : `<p class="ai-empty-hint">未比對到直接符合的 ICD-10-PCS 處置編碼</p>`;
+
+    el.aiResultsContent.innerHTML = `
+      <div class="ai-summary-card">
+        <h3>AI 臨床與申報判讀摘要（${escapeHtml(entry.model)}）</h3>
+        <p>${escapeHtml(entry.clinicalSummary || entry.query)}</p>
+      </div>
+      <div class="ai-group-title"><span>健保支付標準候選</span><span class="ai-group-count">${entry.nhiHits.length} 筆</span></div>
+      <div class="icd-grid">${nhiHtml}</div>
+      <div class="ai-group-title"><span>ICD-9 / ICD-10 / ICD-11 診斷候選</span><span class="ai-group-count">${entry.cmHits.length} 筆</span></div>
+      <div class="icd-grid">${cmHtml}</div>
+      <div class="ai-group-title"><span>ICD-10-PCS 處置編碼候選</span><span class="ai-group-count">${entry.pcsHits.length} 筆</span></div>
+      <div class="icd-grid">${pcsHtml}</div>
+    `;
+  }
+
+  function exportAllSettings() {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      preferences: {
+        theme: state.theme,
+        fontSize: state.fontSize,
+      },
+      favorites: [...state.favorites],
+      aiConfig: state.ai.config,
+      aiHistory: state.ai.history,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `JianBaoSearch_設定備份_${TODAY_STR}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("已匯出完整設定與歷史備份");
+  }
+
+  function importAllSettings(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result || "{}"));
+        if (data.preferences) {
+          if (data.preferences.theme) applyTheme(data.preferences.theme);
+          if (data.preferences.fontSize) applyFontSize(data.preferences.fontSize);
+        }
+        if (Array.isArray(data.favorites)) {
+          state.favorites = new Set(data.favorites);
+          saveFavorites();
+          renderResults();
+        }
+        if (data.aiConfig && data.aiConfig.providers) {
+          state.ai.config = data.aiConfig;
+          saveAiConfig();
+          populateSettingsForm();
+        }
+        if (Array.isArray(data.aiHistory)) {
+          state.ai.history = data.aiHistory;
+          saveAiHistory();
+          renderAiHistory();
+        }
+        showToast("已成功匯入設定、API Key、星號收藏與 AI 歷史紀錄");
+      } catch (err) {
+        showToast(`匯入失敗：JSON 格式錯誤 (${err.message})`);
+      }
+    };
+    reader.readAsText(file, "utf-8");
+  }
+
+  function bindAiAndSettingsEvents() {
+    el.aiHistoryHeaderBtn.addEventListener("click", () => switchMode("ai"));
+
+    const openSettings = () => {
+      populateSettingsForm();
+      el.settingsModal.classList.remove("hidden");
+    };
+    el.settingsModalBtn.addEventListener("click", openSettings);
+    el.aiQuickConfigBtn.addEventListener("click", openSettings);
+    el.aiOpenSettingsBtn.addEventListener("click", openSettings);
+
+    el.closeSettingsBtn.addEventListener("click", () => el.settingsModal.classList.add("hidden"));
+    el.settingsModal.addEventListener("click", (e) => {
+      if (e.target === el.settingsModal) el.settingsModal.classList.add("hidden");
+    });
+
+    el.aiProviderSelect.addEventListener("change", () => {
+      populateSettingsForm(el.aiProviderSelect.value);
+    });
+
+    el.aiModelSelect.addEventListener("change", () => {
+      el.aiCustomModelInput.value = el.aiModelSelect.value;
+    });
+
+    el.toggleApiKeyVisBtn.addEventListener("click", () => {
+      const isPwd = el.aiApiKeyInput.type === "password";
+      el.aiApiKeyInput.type = isPwd ? "text" : "password";
+      el.toggleApiKeyVisBtn.textContent = isPwd ? "隱藏" : "顯示";
+    });
+
+    el.fetchFreeModelsBtn.addEventListener("click", fetchFreeModels);
+
+    el.saveAiSettingsBtn.addEventListener("click", () => {
+      const p = el.aiProviderSelect.value;
+      const key = el.aiApiKeyInput.value.trim();
+      const model = el.aiCustomModelInput.value.trim() || el.aiModelSelect.value;
+      const baseUrl = el.aiBaseUrlInput.value.trim();
+
+      state.ai.config.activeProvider = p;
+      state.ai.config.providers[p] = { apiKey: key, model, baseUrl };
+      saveAiConfig();
+      el.settingsModal.classList.add("hidden");
+      showToast(`已儲存 ${p} 設定 (${model || "無模型"})`);
+    });
+
+    el.exportSettingsBtn.addEventListener("click", exportAllSettings);
+    el.importSettingsInput.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      importAllSettings(file);
+      e.target.value = "";
+    });
+
+    // Main screen AI checkbox
+    el.aiSearchCheckbox.addEventListener("change", () => {
+      state.ai.enabled = el.aiSearchCheckbox.checked;
+      el.aiSearchSubmitBtn.classList.toggle("hidden", !state.ai.enabled);
+      if (state.ai.enabled) {
+        el.searchInput.placeholder = "【AI 搜尋模式】輸入自然語言，例如：急性膽囊炎做腹腔鏡切除術，按 Enter 跨庫查詢";
+      } else {
+        el.searchInput.placeholder = "輸入代碼、中文/英文名稱、部章節或備註關鍵字（多關鍵字請用空格分隔，例如：超音波 腹部、2-2-7）";
+      }
+    });
+
+    el.searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && state.ai.enabled) {
+        e.preventDefault();
+        runAiSearch(el.searchInput.value);
+      }
+    });
+
+    el.aiSearchSubmitBtn.addEventListener("click", () => {
+      runAiSearch(el.searchInput.value);
+    });
+
+    // AI dedicated page events
+    el.aiRunBtn.addEventListener("click", () => runAiSearch(el.aiPromptInput.value));
+    el.aiPromptInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        runAiSearch(el.aiPromptInput.value);
+      }
+    });
+
+    document.querySelectorAll(".ai-example-chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        el.aiPromptInput.value = btn.dataset.aiExample;
+        runAiSearch(btn.dataset.aiExample);
+      });
+    });
+
+    el.aiClearHistoryBtn.addEventListener("click", () => {
+      state.ai.history = [];
+      state.ai.activeHistoryId = null;
+      saveAiHistory();
+      renderAiHistory();
+      el.aiResultsContent.classList.add("hidden");
+      el.aiEmptyState.classList.remove("hidden");
+      showToast("已清空 AI 查詢歷史");
+    });
+
+    el.aiHistoryList.addEventListener("click", (e) => {
+      const delBtn = e.target.closest("[data-del-hist]");
+      if (delBtn) {
+        e.stopPropagation();
+        const id = delBtn.dataset.delHist;
+        state.ai.history = state.ai.history.filter((h) => h.id !== id);
+        if (state.ai.activeHistoryId === id) {
+          state.ai.activeHistoryId = null;
+          el.aiResultsContent.classList.add("hidden");
+          el.aiEmptyState.classList.remove("hidden");
+        }
+        saveAiHistory();
+        renderAiHistory();
+        return;
+      }
+      const itemEl = e.target.closest("[data-hist-id]");
+      if (itemEl) {
+        const entry = state.ai.history.find((h) => h.id === itemEl.dataset.histId);
+        if (entry) {
+          state.ai.activeHistoryId = entry.id;
+          el.aiPromptInput.value = entry.query;
+          renderAiHistory();
+          renderAiResult(entry);
+        }
+      }
+    });
+
+    el.aiResultsContent.addEventListener("click", (e) => {
+      const copyBtn = e.target.closest("[data-copy-ai]");
+      if (copyBtn) {
+        e.stopPropagation();
+        copyText(copyBtn.dataset.copyAi, `代碼 ${copyBtn.dataset.copyAi}`);
+        return;
+      }
+      const jumpBtn = e.target.closest("[data-jump-nhi]");
+      if (jumpBtn) {
+        const code = jumpBtn.dataset.jumpNhi;
+        switchMode("nhi");
+        el.searchInput.value = code;
+        el.clearSearchBtn.classList.remove("hidden");
+        state.query = code;
+        applyFilters();
+        return;
+      }
+      const nhiCard = e.target.closest("[data-ai-nhi]");
+      if (nhiCard) {
+        openDetail(nhiCard.dataset.aiNhi);
+      }
+    });
   }
 
   async function init() {
     loadPreferences();
     loadFavorites();
+    loadAiState();
     bindEvents();
 
     try {

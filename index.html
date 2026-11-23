@@ -49,6 +49,14 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           <span>匯出 CSV</span>
         </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="aiHistoryHeaderBtn" title="開啟 AI 智慧查詢與歷史紀錄">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>AI查詢歷史</span>
+          <span class="fav-count" id="aiHistoryCountBadge">0</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="settingsModalBtn" title="AI API 設定與資料匯入/匯出" aria-label="設定">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
         <button type="button" class="btn btn-ghost btn-sm" id="infoModalBtn" title="資料來源與自動更新說明">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           <span>更新資訊</span>
@@ -70,6 +78,10 @@
       <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="icd-pcs">
         <span class="tab-badge">PCS</span>
         <span>ICD-10-PCS 處置編碼</span>
+      </button>
+      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="ai">
+        <span class="tab-badge">AI</span>
+        <span>AI 智慧查詢與歷史</span>
       </button>
     </div>
   </nav>
@@ -94,6 +106,18 @@
         <button type="button" id="clearSearchBtn" class="clear-btn hidden" aria-label="清除搜尋">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
+      </div>
+
+      <div class="ai-toggle-bar">
+        <label class="ai-checkbox-label">
+          <input type="checkbox" id="aiSearchCheckbox" />
+          <span class="ai-checkbox-title">啟用 AI搜尋</span>
+          <span class="ai-checkbox-hint" id="aiActiveModelHint">（使用自然語言一次查詢健保支付標準、ICD 診斷與 ICD 處置）</span>
+        </label>
+        <div class="ai-toggle-actions">
+          <button type="button" id="aiSearchSubmitBtn" class="btn btn-primary btn-sm hidden">送出 AI 查詢</button>
+          <button type="button" id="aiQuickConfigBtn" class="btn btn-ghost btn-sm">設定 AI 模型</button>
+        </div>
       </div>
 
       <div class="filters-row">
@@ -315,6 +339,64 @@
         <div class="pagination-bar" id="icdPcsPageBottom"></div>
       </section>
     </div>
+
+    <!-- AI Smart Search & History View -->
+    <div id="aiSearchView" class="view-panel hidden">
+      <section class="search-panel" aria-label="AI 自然語言跨庫查詢">
+        <div class="ai-search-row">
+          <div class="search-box-wrap" style="flex:1">
+            <label for="aiPromptInput" class="sr-only">輸入自然語言醫療描述</label>
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M16 14a4 4 0 0 1 4 4v2H4v-2a4 4 0 0 1 4-4"/>
+            </svg>
+            <input
+              type="search"
+              id="aiPromptInput"
+              class="search-input"
+              placeholder="輸入自然語言描述，例如：急性膽囊炎做腹腔鏡膽囊切除術、糖尿病併視網膜病變追蹤..."
+              autocomplete="off"
+            />
+          </div>
+          <button type="button" id="aiRunBtn" class="btn btn-primary">AI 智慧查詢</button>
+          <button type="button" id="aiOpenSettingsBtn" class="btn btn-secondary">AI 模型設定</button>
+        </div>
+        <div class="filters-row" style="margin-top:10px;padding-top:10px">
+          <div class="filter-group">
+            <span class="filter-label">目前模型：</span>
+            <span class="tier-pill" id="aiCurrentModelBadge">尚未設定</span>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">範例：</span>
+            <button type="button" class="chip ai-example-chip" data-ai-example="急性膽囊炎做腹腔鏡膽囊切除術">急性膽囊炎做腹腔鏡膽囊切除術</button>
+            <button type="button" class="chip ai-example-chip" data-ai-example="第二型糖尿病併腎病變門診追蹤抽血檢查">第二型糖尿病併腎病變門診追蹤</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="ai-workspace">
+        <aside class="ai-history-panel" aria-label="AI 查詢歷史紀錄">
+          <div class="ai-panel-header">
+            <h2>查詢歷史紀錄</h2>
+            <button type="button" id="aiClearHistoryBtn" class="btn btn-ghost btn-sm" title="清空歷史紀錄">清空</button>
+          </div>
+          <div id="aiHistoryList" class="ai-history-list">
+            <p class="ai-empty-hint">尚無 AI 查詢紀錄</p>
+          </div>
+        </aside>
+
+        <section class="ai-results-panel" aria-label="AI 查詢結果">
+          <div id="aiLoadingState" class="state-card hidden">
+            <div class="spinner" aria-hidden="true"></div>
+            <p id="aiLoadingText">AI 正在分析語意並比對健保支付標準、ICD 診斷與 ICD 處置資料庫...</p>
+          </div>
+          <div id="aiEmptyState" class="state-card">
+            <h2>AI 跨庫智慧查詢</h2>
+            <p>請輸入臨床描述或選擇左側歷史紀錄，系統將一次找出可能的「健保支付標準」、「ICD-9/10/11 診斷」與「ICD-10-PCS 處置」。</p>
+          </div>
+          <div id="aiResultsContent" class="hidden"></div>
+        </section>
+      </div>
+    </div>
   </main>
 
   <!-- Item Detail Drawer / Modal -->
@@ -400,6 +482,81 @@
         </dl>
         <div class="info-note">
           <strong>提示：</strong>本工具僅供醫療服務代碼與點數快速查詢參考，實際申報規定仍以衛生福利部中央健康保險署最新公告為準。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (AI API + Import/Export) -->
+  <div class="modal-backdrop hidden" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal-dialog modal-dialog-lg">
+      <div class="modal-header">
+        <h2 id="settingsModalTitle" class="dialog-title">系統設定與資料備份</h2>
+        <button type="button" class="icon-btn" id="closeSettingsBtn" aria-label="關閉">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <h3>1. AI 智慧搜尋設定</h3>
+          <p class="settings-desc">所有 API Key 僅儲存於您的瀏覽器本機（localStorage），不會上傳至任何第三方伺服器。</p>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="aiProviderSelect">AI 服務供應商</label>
+              <select id="aiProviderSelect" class="select-input full-width">
+                <option value="gemini">Google Gemini</option>
+                <option value="openrouter">OpenRouter (支援免費模型)</option>
+                <option value="openai">OpenAI</option>
+                <option value="custom">自訂 (OpenAI 相容 API)</option>
+              </select>
+            </div>
+
+            <div class="form-field" id="aiBaseUrlField" style="display:none">
+              <label for="aiBaseUrlInput">API Base URL</label>
+              <input type="url" id="aiBaseUrlInput" class="text-input" placeholder="https://api.openai.com/v1" />
+            </div>
+
+            <div class="form-field">
+              <label for="aiApiKeyInput">API Key</label>
+              <div class="input-with-btn">
+                <input type="password" id="aiApiKeyInput" class="text-input" placeholder="貼上對應供應商的 API Key" autocomplete="off" />
+                <button type="button" id="toggleApiKeyVisBtn" class="btn btn-secondary btn-sm">顯示</button>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <div class="label-row">
+                <label for="aiModelSelect">選擇模型</label>
+                <button type="button" id="fetchFreeModelsBtn" class="btn btn-secondary btn-sm">自動搜尋 Free Model</button>
+              </div>
+              <select id="aiModelSelect" class="select-input full-width"></select>
+              <input type="text" id="aiCustomModelInput" class="text-input" placeholder="或手動輸入模型 ID（例如：gpt-4o-mini）" style="margin-top:6px" />
+              <p class="field-hint" id="aiModelFetchStatus"></p>
+            </div>
+          </div>
+
+          <div class="settings-actions-row">
+            <button type="button" id="saveAiSettingsBtn" class="btn btn-primary">儲存 AI 設定</button>
+          </div>
+        </div>
+
+        <hr class="settings-divider" />
+
+        <div class="settings-section">
+          <h3>2. 設定匯入 / 匯出（完整備份）</h3>
+          <p class="settings-desc">可匯出或還原：<strong>AI API Key 與模型設定</strong>、<strong>AI 查詢歷史紀錄</strong>、<strong>常用星號收藏（★）</strong>以及<strong>明亮/暗色與字型設定</strong>。</p>
+          <div class="settings-actions-row">
+            <button type="button" id="exportSettingsBtn" class="btn btn-secondary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>匯出設定 JSON</span>
+            </button>
+            <label class="btn btn-secondary" style="cursor:pointer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>匯入設定 JSON</span>
+              <input type="file" id="importSettingsInput" accept="application/json,.json" class="sr-only" />
+            </label>
+          </div>
         </div>
       </div>
     </div>
