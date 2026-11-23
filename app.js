@@ -1803,40 +1803,46 @@
     };
   }
 
+  function detectQueryScope(userQuery) {
+    const q = String(userQuery || "");
+    const hasProc = /手術|切除|支架|置放|植入|引流|縫合|內視鏡|腹腔鏡|導管|切片|穿刺|震波|雷射|放療|化療|處置|洗腎|透析|清創|拔牙|麻醉|健保|點數|2-2-7|227|2-2-6|226|PCS/i.test(q);
+    const hasDx = /病|炎|癌|瘤|症|骨折|出血|栓塞|梗塞|衰竭|感染|潰瘍|結石|ICD|診斷/i.test(q);
+    if (hasProc && !hasDx) return { scope: "proc", label: "鎖定範圍：健保支付標準 + ICD-10-PCS 處置" };
+    if (hasDx && !hasProc) return { scope: "dx", label: "鎖定範圍：ICD 診斷 + 相關健保檢查/處置" };
+    return { scope: "all", label: "鎖定範圍：健保支付標準 + ICD 診斷 + ICD 處置" };
+  }
+
   async function callAiApi(userQuery, allowClarify = true) {
+    const scopeInfo = detectQueryScope(userQuery);
     const clarifyRule = allowClarify
-      ? [
-          "【反問機制（已啟用）】",
-          "如果使用者的查詢條件過於簡略或有歧義，缺少決定正確編碼或健保 2-2-7 / 2-2-6 認定的關鍵臨床資訊（例如：門診或住院、手術途徑為開放或內視鏡、病灶部位/分期、是否為初次診斷等），請將 needsClarification 設為 true，並在 clarifyingQuestions 列出 1 到 3 個最關鍵、簡潔的繁體中文問題反問使用者。",
-          "如果資訊已足夠判斷，則將 needsClarification 設為 false，clarifyingQuestions 設為空陣列 []，並完整填寫下方所有欄位。",
-        ].join("\n")
-      : "【反問機制（已關閉）】請務必將 needsClarification 設為 false，直接依據現有資訊提供最完整的編碼候選與說明。";
+      ? "【反問機制（已啟用）】若查詢條件過於簡略且缺少決定編碼或 2-2-7/2-2-6 認定的關鍵資訊（如門診/住院、術式途徑、部位分期），請設 needsClarification=true 並於 clarifyingQuestions 給 1~3 個簡短問題；若已足夠則設 false。"
+      : "【反問機制（已關閉）】請務必設 needsClarification=false，直接給完整候選。";
 
     const systemPrompt = [
       AI_FOCUSED_PERSONA,
       "",
+      `【查詢範圍】${scopeInfo.label}。請精簡回覆以加快速度（每段說明限 1~2 句重點，nhiKeywords 必須是 2~4 字的短詞如 "支架"、"頸動脈"、"動脈瘤"、"血管"，切勿寫成一整句）。`,
       clarifyRule,
       "",
-      "請根據使用者的自然語言醫療描述，只回傳單一 JSON 物件（不要加入 ```json 或其他說明文字），結構如下：",
+      "只回傳單一 JSON（不要 ```json）：",
       "{",
       '  "needsClarification": false,',
       '  "clarifyingQuestions": [],',
-      '  "clinicalSummary": "簡短繁體中文臨床判讀、編碼原則與客觀理賠要件摘要",',
-      '  "nhiKeywords": ["2到4個最適合搜尋台灣健保支付標準的中文關鍵字或醫令代碼"],',
-      '  "nhiCodes": ["若知道確切健保代碼可列於此"],',
-      '  "icdKeywords": ["2到4個最適合搜尋ICD診斷的中英文疾病關鍵字"],',
-      '  "icd10Codes": ["可能的ICD-10-CM代碼如 E11.9, K80.00"],',
-      '  "pcsKeywords": ["2到4個最適合搜尋ICD-10-PCS處置的中英文術式關鍵字"],',
-      '  "pcsCodes": ["可能的ICD-10-PCS處置碼如 0FT44ZZ"],',
+      '  "clinicalSummary": "2句內臨床與申報判讀摘要",',
+      '  "nhiKeywords": ["3到5個2~4字中文短詞，利於比對台灣健保2-2-6/2-2-7/2-2-2項目"],',
+      '  "nhiCodes": ["已知健保代碼"],',
+      '  "icdKeywords": ["2到4個中英文疾病短詞"],',
+      '  "icd10Codes": ["可能ICD-10-CM代碼"],',
+      '  "pcsKeywords": ["2到4個中英文處置短詞"],',
+      '  "pcsCodes": ["可能ICD-10-PCS代碼"],',
       '  "whyListed": {',
-      '    "nhi": "說明為何列出上述健保支付標準項目（包含對應的部章節如 2-2-7 手術或 2-2-6 處置意義）",',
-      '    "icd": "說明為何列出上述 ICD 診斷編碼（依據臨床事實與主次診斷編碼規則）",',
-      '    "pcs": "說明為何列出上述 ICD-10-PCS 處置編碼（術式部位、途徑與裝置判讀）"',
+      '    "nhi": "1~2句說明為何列這些健保項目與2-2-7/2-2-6差異",',
+      '    "icd": "1~2句說明為何列這些ICD診斷",',
+      '    "pcs": "1~2句說明為何列這些PCS處置"',
       "  },",
       '  "nextCriteriaAndProgression": [',
-      '    "要件1：疾病/診斷進一步確認或分期所需的客觀檢查/病理要件與可能臨床發展",',
-      '    "要件2：處置/手術申報與保險理賠認定要件（如 2-2-7 vs 2-2-6、住院天數、病歷記載重點，嚴守不為理賠扭曲診斷原則）",',
-      '    "要件3：後續追蹤、併發症或治療升級時可能對應的編碼/處置演進"',
+      '    "診斷/分期需確認之客觀檢查或病理要件",',
+      '    "處置/保險理賠要件重點（不為理賠扭曲診斷）"',
       "  ]",
       "}",
     ].join("\n");
@@ -1880,23 +1886,89 @@
     return await callAiRequest(messages, false);
   }
 
-  function matchLocalNhi(aiPlan) {
+  function extractMedicalTokens(texts) {
+    const stopWords = new Set(["治療", "手術", "處置", "檢查", "使用", "合併", "進行", "裝設", "相關", "可能", "需要", "一般", "其他"]);
+    const tokens = new Set();
+    for (const raw of texts) {
+      const s = String(raw || "").trim().toLowerCase();
+      if (!s) continue;
+      for (const seg of s.split(/[\s,，、；;（）()\/\-－]+/)) {
+        if (!seg) continue;
+        if (seg.length >= 2 && seg.length <= 6 && !stopWords.has(seg)) {
+          tokens.add(seg);
+        }
+        // Extract 2-char and 3-char CJK medical sub-terms from longer phrases
+        const cjkRuns = seg.match(/[\u4e00-\u9fff]{2,}/g) || [];
+        for (const run of cjkRuns) {
+          if (run.length <= 4 && !stopWords.has(run)) tokens.add(run);
+          if (run.length >= 3) {
+            for (let i = 0; i <= run.length - 2; i++) {
+              const bi = run.slice(i, i + 2);
+              if (!stopWords.has(bi)) tokens.add(bi);
+            }
+          }
+          if (run.length >= 4) {
+            for (let i = 0; i <= run.length - 3; i++) {
+              const tri = run.slice(i, i + 3);
+              if (!stopWords.has(tri)) tokens.add(tri);
+            }
+          }
+        }
+      }
+    }
+    return [...tokens];
+  }
+
+  function matchLocalNhi(aiPlan, rawQuery = "", pcsHits = []) {
     const codes = new Set((aiPlan.nhiCodes || []).map((c) => String(c).trim().toUpperCase()));
+    const pcsLinkedCodes = new Set();
+    for (const p of pcsHits || []) {
+      for (const c of p.nhi || []) {
+        pcsLinkedCodes.add(String(c).trim().toUpperCase());
+      }
+    }
+
     const kws = (aiPlan.nhiKeywords || []).map((k) => String(k).trim().toLowerCase()).filter(Boolean);
+    const tokens = extractMedicalTokens([...kws, ...(aiPlan.pcsKeywords || []), rawQuery]);
     const scored = [];
 
     for (let i = 0; i < state.allItems.length; i++) {
       const it = state.allItems[i];
+      const codeUpper = it.c.toUpperCase();
+      const zhLower = (it.zh || "").toLowerCase();
       let score = 0;
-      if (codes.has(it.c.toUpperCase())) score += 100;
+
+      if (codes.has(codeUpper)) score += 120;
+      if (pcsLinkedCodes.has(codeUpper)) score += 75;
+
       for (const kw of kws) {
         const parts = kw.split(/\s+/).filter(Boolean);
         if (parts.length && parts.every((p) => it._search.includes(p))) {
-          score += it.zh.toLowerCase().includes(kw) ? 20 : 10;
+          score += zhLower.includes(kw) ? 35 : 18;
         }
       }
-      if (score > 0 && isItemActive(it)) score += 2;
-      if (score > 0) scored.push({ item: it, score });
+
+      if (tokens.length) {
+        let tokenHits = 0;
+        for (const tk of tokens) {
+          if (zhLower.includes(tk)) {
+            score += tk.length >= 3 ? 14 : 9;
+            tokenHits++;
+          } else if (it._search.includes(tk)) {
+            score += 3;
+          }
+        }
+        if (tokenHits >= 2) score += 15;
+      }
+
+      if (score > 0) {
+        const secGroup = it._section ? it._section.group : "";
+        if (secGroup === "手術" || secGroup === "治療處置" || secGroup === "放射線診療") {
+          score += 8;
+        }
+        if (isItemActive(it)) score += 3;
+        scored.push({ item: it, score });
+      }
     }
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, 12).map((s) => ({
@@ -2099,14 +2171,16 @@
         startAiProgressUi(startedAt, "步驟 3/3：正在比對健保支付標準與 ICD 資料庫...", 88);
       }
 
-      entry.nhiHits = matchLocalNhi(aiPlan);
-      entry.cmHits = matchLocalIcdCm(aiPlan);
       entry.pcsHits = matchLocalIcdPcs(aiPlan);
+      entry.nhiHits = matchLocalNhi(aiPlan, q, entry.pcsHits);
+      entry.cmHits = matchLocalIcdCm(aiPlan);
       entry.clinicalSummary = aiPlan.clinicalSummary || "";
       entry.whyListed = aiPlan.whyListed || {};
       entry.nextCriteriaAndProgression = aiPlan.nextCriteriaAndProgression || [];
       entry.clarifyingQuestions = [];
       entry.status = "done";
+      entry.waitingResume = false;
+      entry.retryCount = 0;
 
       saveAiHistory();
       renderAiHistory();
@@ -2116,8 +2190,33 @@
       }
       showToast(`AI 查詢完成：「${q.slice(0, 14)}${q.length > 14 ? "…" : ""}」`);
     } catch (err) {
+      const msg = err?.message || "未知錯誤";
+      const isNetworkAbort = /failed to fetch|load failed|networkerror|network request failed|abort/i.test(msg);
+      const retries = Number(entry.retryCount || 0);
+
+      // Mobile browsers often suspend/abort fetch when switching to another app.
+      // Automatically queue for seamless resume as soon as the user returns to this tab.
+      if (isNetworkAbort && retries < 2) {
+        entry.status = "pending";
+        entry.waitingResume = true;
+        entry.retryCount = retries + 1;
+        entry.allowClarifyOnResume = allowClarify;
+        saveAiHistory();
+        renderAiHistory();
+        if (document.visibilityState === "visible") {
+          setTimeout(() => {
+            if (entry.waitingResume) {
+              entry.waitingResume = false;
+              runAiSearch(entry.query, { existingEntry: entry, allowClarify: entry.allowClarifyOnResume });
+            }
+          }, 900);
+        }
+        return;
+      }
+
       entry.status = "error";
-      entry.errorMessage = err.message || "未知錯誤";
+      entry.waitingResume = false;
+      entry.errorMessage = isNetworkAbort ? "切換 App 導致瀏覽器中斷連線，請點下方「重新查詢」繼續。" : msg;
       saveAiHistory();
       renderAiHistory();
       if (state.ai.activeHistoryId === entry.id) {
@@ -2127,6 +2226,16 @@
       showToast(`AI 查詢失敗：${entry.errorMessage.slice(0, 40)}`);
     }
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const toResume = state.ai.history.find((h) => h.waitingResume && h.status === "pending");
+    if (toResume) {
+      toResume.waitingResume = false;
+      showToast("回到畫面，自動續傳先前中斷的 AI 查詢...");
+      runAiSearch(toResume.query, { existingEntry: toResume, allowClarify: toResume.allowClarifyOnResume });
+    }
+  });
 
   function renderAiHistory() {
     const list = state.ai.history;
