@@ -63,6 +63,8 @@
       },
       history: [],
       activeHistoryId: null,
+      returnFromNhiJump: false,
+      lastScrollY: 0,
       cachedModels: {
         gemini: [],
         openrouter: [],
@@ -76,6 +78,9 @@
   const el = {
     modeSelect: document.getElementById("modeSelect"),
     nhiView: document.getElementById("nhiView"),
+    nhiReturnToAiBar: document.getElementById("nhiReturnToAiBar"),
+    nhiReturnToAiBtn: document.getElementById("nhiReturnToAiBtn"),
+    nhiReturnToAiHint: document.getElementById("nhiReturnToAiHint"),
     icdCmView: document.getElementById("icdCmView"),
     icdPcsView: document.getElementById("icdPcsView"),
     aiSearchView: document.getElementById("aiSearchView"),
@@ -113,6 +118,10 @@
     aiLoadingMeta: document.getElementById("aiLoadingMeta"),
     aiEmptyState: document.getElementById("aiEmptyState"),
     aiResultsContent: document.getElementById("aiResultsContent"),
+    aiFloatingQuickBar: document.getElementById("aiFloatingQuickBar"),
+    aiQuickHistoryBtn: document.getElementById("aiQuickHistoryBtn"),
+    aiQuickExplainBtn: document.getElementById("aiQuickExplainBtn"),
+    aiQuickChatBtn: document.getElementById("aiQuickChatBtn"),
     icdCmInput: document.getElementById("icdCmInput"),
     icdCmClearBtn: document.getElementById("icdCmClearBtn"),
     icdCmExamples: document.getElementById("icdCmExamples"),
@@ -1075,6 +1084,11 @@
     el.icdPcsView.classList.toggle("hidden", mode !== "icd-pcs");
     el.aiSearchView.classList.toggle("hidden", mode !== "ai");
 
+    if (mode !== "nhi") {
+      state.ai.returnFromNhiJump = false;
+      if (el.nhiReturnToAiBar) el.nhiReturnToAiBar.classList.add("hidden");
+    }
+
     if (mode === "icd-cm" && !state.icdCm.loaded && !state.icdCm.loading) {
       loadIcdCm();
     } else if (mode === "icd-pcs" && !state.icdPcs.loaded && !state.icdPcs.loading) {
@@ -1082,6 +1096,7 @@
     } else if (mode === "ai") {
       renderAiHistory();
     }
+    updateAiFloatingBar();
   }
 
   async function loadIcdCm() {
@@ -2237,6 +2252,45 @@
     }
   });
 
+  function scrollToAiSection(target) {
+    if (target === "history") {
+      const historyPanel = document.querySelector(".ai-history-panel");
+      if (historyPanel) {
+        historyPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+      return;
+    }
+    if (target === "explain") {
+      const explainEl = document.getElementById("aiExplainSection");
+      if (explainEl) {
+        explainEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return;
+    }
+    if (target === "chat") {
+      const chatEl = document.getElementById("aiChatSection");
+      if (chatEl) {
+        chatEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        const inputEl = document.getElementById("aiFollowUpInput");
+        if (inputEl) {
+          setTimeout(() => inputEl.focus({ preventScroll: true }), 350);
+        }
+      }
+    }
+  }
+
+  function updateAiFloatingBar() {
+    if (!el.aiFloatingQuickBar) return;
+    const isAiMode = state.mode === "ai";
+    const hasResultVisible = el.aiResultsContent && !el.aiResultsContent.classList.contains("hidden");
+    const hasExplainOrChat = Boolean(document.getElementById("aiExplainSection") || document.getElementById("aiChatSection"));
+    const scrolledDown = window.scrollY > 220;
+    const shouldShow = isAiMode && hasResultVisible && hasExplainOrChat && scrolledDown;
+    el.aiFloatingQuickBar.classList.toggle("hidden", !shouldShow);
+  }
+
   function renderAiHistory() {
     const list = state.ai.history;
     if (!list.length) {
@@ -2247,6 +2301,7 @@
       .map((h) => {
         let statusTag = "";
         let metaText = `${escapeHtml(h.timestamp)} · 健保${(h.nhiHits || []).length} / 診斷${(h.cmHits || []).length} / 處置${(h.pcsHits || []).length}`;
+        const isDone = !h.status || h.status === "done";
         if (h.status === "pending") {
           statusTag = `<span class="ai-status-pill pending">查詢中</span>`;
           metaText = `${escapeHtml(h.timestamp)} · 背景處理中...`;
@@ -2257,11 +2312,18 @@
           statusTag = `<span class="ai-status-pill error">失敗</span>`;
           metaText = `${escapeHtml(h.timestamp)} · 點擊可重試`;
         }
+        const actionsHtml = isDone
+          ? `<div class="ai-history-actions">
+              <button type="button" class="ai-history-action-btn" data-hist-action="explain" data-hist-id="${escapeHtml(h.id)}">顯示判斷原因</button>
+              <button type="button" class="ai-history-action-btn primary" data-hist-action="chat" data-hist-id="${escapeHtml(h.id)}">繼續對話</button>
+            </div>`
+          : "";
         return `
       <div class="ai-history-item ${h.id === state.ai.activeHistoryId ? "active" : ""}" data-hist-id="${escapeHtml(h.id)}">
         <button type="button" class="ai-history-del" data-del-hist="${escapeHtml(h.id)}" title="刪除此筆紀錄" aria-label="刪除">✕</button>
         <div class="ai-history-query">${statusTag}${escapeHtml(h.query)}</div>
         <div class="ai-history-meta">${metaText}</div>
+        ${actionsHtml}
       </div>
     `;
       })
@@ -2437,7 +2499,7 @@
       <div class="ai-group-title"><span>ICD-10-PCS 處置編碼候選</span><span class="ai-group-count">${entry.pcsHits.length} 筆</span></div>
       <div class="icd-grid">${pcsHtml}</div>
 
-      <section class="ai-explain-card" aria-label="AI 選碼說明與可能發展">
+      <section id="aiExplainSection" class="ai-explain-card" aria-label="AI 選碼說明與可能發展">
         <h3>AI 編碼依據說明與後續要件／可能發展</h3>
         <div class="ai-integrity-banner">判讀原則：嚴格依據臨床事實給予正確診斷與處置編碼，客觀檢視健保部章節及保險理賠要件，絕不為迎合理賠而扭曲診斷。</div>
         <div class="ai-explain-grid">
@@ -2460,7 +2522,7 @@
         </div>
       </section>
 
-      <section class="ai-chat-card" aria-label="繼續與 AI 對話">
+      <section id="aiChatSection" class="ai-chat-card" aria-label="繼續與 AI 對話">
         <h3>繼續對話（深入確認診斷、處置要件與理賠規範）</h3>
         <div class="ai-chat-messages" id="aiChatMessages">${chatHtml}</div>
         <div class="ai-chat-form">
@@ -2472,6 +2534,7 @@
 
     const chatBox = document.getElementById("aiChatMessages");
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+    updateAiFloatingBar();
   }
 
   function exportAllSettings() {
@@ -2667,6 +2730,7 @@
       renderAiHistory();
       el.aiResultsContent.classList.add("hidden");
       el.aiEmptyState.classList.remove("hidden");
+      updateAiFloatingBar();
       showToast("已清空 AI 查詢歷史");
     });
 
@@ -2676,6 +2740,7 @@
         state.ai.activeHistoryId = null;
         el.aiResultsContent.classList.add("hidden");
         el.aiEmptyState.classList.remove("hidden");
+        updateAiFloatingBar();
       }
       saveAiHistory();
       renderAiHistory();
@@ -2687,6 +2752,21 @@
       if (delBtn) {
         e.stopPropagation();
         deleteAiHistoryById(delBtn.dataset.delHist);
+        return;
+      }
+      const actionBtn = e.target.closest("[data-hist-action]");
+      if (actionBtn) {
+        e.stopPropagation();
+        const action = actionBtn.dataset.histAction;
+        const histId = actionBtn.dataset.histId;
+        const entry = state.ai.history.find((h) => h.id === histId);
+        if (entry) {
+          state.ai.activeHistoryId = entry.id;
+          el.aiPromptInput.value = entry.query;
+          renderAiHistory();
+          renderAiResult(entry);
+          requestAnimationFrame(() => scrollToAiSection(action));
+        }
         return;
       }
       const itemEl = e.target.closest("[data-hist-id]");
@@ -2797,11 +2877,20 @@
       const jumpBtn = e.target.closest("[data-jump-nhi]");
       if (jumpBtn) {
         const code = jumpBtn.dataset.jumpNhi;
+        state.ai.lastScrollY = window.scrollY;
+        state.ai.returnFromNhiJump = true;
         switchMode("nhi");
+        if (el.nhiReturnToAiBar) {
+          el.nhiReturnToAiBar.classList.remove("hidden");
+        }
+        if (el.nhiReturnToAiHint) {
+          el.nhiReturnToAiHint.textContent = `目前檢視由 AI 查詢結果跳轉之健保醫令：${code}`;
+        }
         el.searchInput.value = code;
         el.clearSearchBtn.classList.remove("hidden");
         state.query = code;
         applyFilters();
+        window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
       const nhiCard = e.target.closest("[data-ai-nhi]");
@@ -2809,6 +2898,30 @@
         openDetail(nhiCard.dataset.aiNhi);
       }
     });
+
+    if (el.nhiReturnToAiBtn) {
+      el.nhiReturnToAiBtn.addEventListener("click", () => {
+        const targetY = state.ai.lastScrollY || 0;
+        state.ai.returnFromNhiJump = false;
+        if (el.nhiReturnToAiBar) el.nhiReturnToAiBar.classList.add("hidden");
+        switchMode("ai");
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: targetY, behavior: "smooth" });
+        });
+      });
+    }
+
+    if (el.aiQuickHistoryBtn) {
+      el.aiQuickHistoryBtn.addEventListener("click", () => scrollToAiSection("history"));
+    }
+    if (el.aiQuickExplainBtn) {
+      el.aiQuickExplainBtn.addEventListener("click", () => scrollToAiSection("explain"));
+    }
+    if (el.aiQuickChatBtn) {
+      el.aiQuickChatBtn.addEventListener("click", () => scrollToAiSection("chat"));
+    }
+
+    window.addEventListener("scroll", updateAiFloatingBar, { passive: true });
 
     el.aiResultsContent.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && e.target && e.target.id === "aiFollowUpInput") {

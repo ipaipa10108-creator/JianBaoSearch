@@ -87,6 +87,10 @@
 
   <main class="container main-content">
     <div id="nhiView" class="view-panel">
+    <div id="nhiReturnToAiBar" class="ai-return-bar hidden">
+      <button type="button" id="nhiReturnToAiBtn" class="btn btn-secondary btn-sm">← 返回 AI 查詢結果</button>
+      <span id="nhiReturnToAiHint" class="ai-return-hint"></span>
+    </div>
     <section class="search-panel" aria-label="搜尋與篩選條件">
       <div class="search-box-wrap">
         <label for="searchInput" class="sr-only">搜尋診療項目代碼、中文名稱、英文名稱、部章節或備註</label>
@@ -408,6 +412,12 @@
           </div>
           <div id="aiResultsContent" class="hidden"></div>
         </section>
+      </div>
+
+      <div id="aiFloatingQuickBar" class="ai-floating-bar hidden" role="toolbar" aria-label="AI 結果快速功能鍵">
+        <button type="button" id="aiQuickHistoryBtn" class="ai-floating-btn">回到歷史查詢</button>
+        <button type="button" id="aiQuickExplainBtn" class="ai-floating-btn">顯示判斷原因</button>
+        <button type="button" id="aiQuickChatBtn" class="ai-floating-btn ai-floating-btn-primary">繼續對話</button>
       </div>
     </div>
   </main>
