@@ -783,6 +783,7 @@
     updateDetailFavButton();
     el.detailModal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
+    updateAiFloatingBar();
   }
 
   function updateDetailFavButton() {
@@ -797,6 +798,7 @@
     el.detailModal.classList.add("hidden");
     document.body.style.overflow = "";
     state.activeItem = null;
+    updateAiFloatingBar();
   }
 
   function downloadCsv(filename, headers, rows) {
@@ -2242,11 +2244,19 @@
     }
   });
 
+  function scrollElementBelowHeader(targetEl) {
+    if (!targetEl) return;
+    const headerEl = document.querySelector("header");
+    const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 0;
+    const targetTop = targetEl.getBoundingClientRect().top + window.scrollY - headerHeight - 12;
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+  }
+
   function scrollToAiSection(target) {
     if (target === "history") {
       const historyPanel = document.querySelector(".ai-history-panel");
       if (historyPanel) {
-        historyPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        scrollElementBelowHeader(historyPanel);
       } else {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
@@ -2255,14 +2265,14 @@
     if (target === "explain") {
       const explainEl = document.getElementById("aiExplainSection");
       if (explainEl) {
-        explainEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        scrollElementBelowHeader(explainEl);
       }
       return;
     }
     if (target === "chat") {
       const chatEl = document.getElementById("aiChatSection");
       if (chatEl) {
-        chatEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        scrollElementBelowHeader(chatEl);
         const inputEl = document.getElementById("aiFollowUpInput");
         if (inputEl) {
           setTimeout(() => inputEl.focus({ preventScroll: true }), 350);
@@ -2277,7 +2287,8 @@
     const hasResultVisible = el.aiResultsContent && !el.aiResultsContent.classList.contains("hidden");
     const hasExplainOrChat = Boolean(document.getElementById("aiExplainSection") || document.getElementById("aiChatSection"));
     const scrolledDown = window.scrollY > 220;
-    const shouldShow = isAiMode && hasResultVisible && hasExplainOrChat && scrolledDown;
+    const anyModalOpen = Boolean(document.querySelector(".modal-backdrop:not(.hidden)"));
+    const shouldShow = isAiMode && hasResultVisible && hasExplainOrChat && scrolledDown && !anyModalOpen;
     el.aiFloatingQuickBar.classList.toggle("hidden", !shouldShow);
   }
 
