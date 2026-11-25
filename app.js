@@ -63,8 +63,6 @@
       },
       history: [],
       activeHistoryId: null,
-      returnFromNhiJump: false,
-      lastScrollY: 0,
       cachedModels: {
         gemini: [],
         openrouter: [],
@@ -78,9 +76,6 @@
   const el = {
     modeSelect: document.getElementById("modeSelect"),
     nhiView: document.getElementById("nhiView"),
-    nhiReturnToAiBar: document.getElementById("nhiReturnToAiBar"),
-    nhiReturnToAiBtn: document.getElementById("nhiReturnToAiBtn"),
-    nhiReturnToAiHint: document.getElementById("nhiReturnToAiHint"),
     icdCmView: document.getElementById("icdCmView"),
     icdPcsView: document.getElementById("icdPcsView"),
     aiSearchView: document.getElementById("aiSearchView"),
@@ -1083,11 +1078,6 @@
     el.icdCmView.classList.toggle("hidden", mode !== "icd-cm");
     el.icdPcsView.classList.toggle("hidden", mode !== "icd-pcs");
     el.aiSearchView.classList.toggle("hidden", mode !== "ai");
-
-    if (mode !== "nhi") {
-      state.ai.returnFromNhiJump = false;
-      if (el.nhiReturnToAiBar) el.nhiReturnToAiBar.classList.add("hidden");
-    }
 
     if (mode === "icd-cm" && !state.icdCm.loaded && !state.icdCm.loading) {
       loadIcdCm();
@@ -2876,21 +2866,14 @@
       }
       const jumpBtn = e.target.closest("[data-jump-nhi]");
       if (jumpBtn) {
-        const code = jumpBtn.dataset.jumpNhi;
-        state.ai.lastScrollY = window.scrollY;
-        state.ai.returnFromNhiJump = true;
-        switchMode("nhi");
-        if (el.nhiReturnToAiBar) {
-          el.nhiReturnToAiBar.classList.remove("hidden");
+        e.stopPropagation();
+        const code = (jumpBtn.dataset.jumpNhi || "").trim();
+        const matched = state.allItems.find((x) => x.c === code || x.c.toUpperCase() === code.toUpperCase());
+        if (matched) {
+          openDetail(matched.c);
+        } else {
+          showToast(`現行健保支付標準中查無醫令 ${code}（可能已停用或更名）`);
         }
-        if (el.nhiReturnToAiHint) {
-          el.nhiReturnToAiHint.textContent = `目前檢視由 AI 查詢結果跳轉之健保醫令：${code}`;
-        }
-        el.searchInput.value = code;
-        el.clearSearchBtn.classList.remove("hidden");
-        state.query = code;
-        applyFilters();
-        window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
       const nhiCard = e.target.closest("[data-ai-nhi]");
@@ -2898,18 +2881,6 @@
         openDetail(nhiCard.dataset.aiNhi);
       }
     });
-
-    if (el.nhiReturnToAiBtn) {
-      el.nhiReturnToAiBtn.addEventListener("click", () => {
-        const targetY = state.ai.lastScrollY || 0;
-        state.ai.returnFromNhiJump = false;
-        if (el.nhiReturnToAiBar) el.nhiReturnToAiBar.classList.add("hidden");
-        switchMode("ai");
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: targetY, behavior: "smooth" });
-        });
-      });
-    }
 
     if (el.aiQuickHistoryBtn) {
       el.aiQuickHistoryBtn.addEventListener("click", () => scrollToAiSection("history"));
