@@ -4,13 +4,13 @@
   "sourceName": "衛生福利部中央健康保險署－醫療服務給付項目及支付標準",
   "sourceUrl": "https://data.gov.tw/dataset/174450",
   "downloadUrl": "https://info.nhi.gov.tw/api/iode0000s01/Dataset?rId=A21030000I-D20021-001",
-  "sourceModifiedDate": "2026-11-19 07:06:01",
-  "updatedAt": "2026-11-20 18:27:07 UTC+08:00",
-  "totalCount": 6181,
-  "sha256": "a9bc0a9840804f9b663503b785dee3f6a47f663bd3af857c46f8ef1fa0295e05",
+  "sourceModifiedDate": "2026-11-27 07:06:09",
+  "updatedAt": "2026-11-27 17:34:25 UTC+08:00",
+  "totalCount": 6192,
+  "sha256": "c6d8fd43ccd942f3415172db9974e2f816392be0b4f5a1645229c53f4fe707d8",
   "diff": {
-    "added": 6181,
+    "added": 0,
     "removed": 0,
-    "pointsChanged": 0
+    "pointsChanged": 1
   }
 }
